@@ -25,13 +25,7 @@
 #define SWAP_INT16_T(a, b) { int16_t t = a; a = b; b = t; }
 #define DELAY 0x80
 
-#if defined(ST7735_1_8_DEFAULT_ORIENTATION) || defined(ST7735S_1_8_DEFAULT_ORIENTATION)
 static uint8_t _data_rotation[4] = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_RGB };
-#endif
-
-#if defined(ST7735_1_44_DEFAULT_ORIENTATION) || defined(ST7735_MINI_DEFAULT_ORIENTATION)
-static uint8_t _data_rotation[4] = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_BGR };
-#endif
 
 static uint8_t _value_rotation = 0;
 static int16_t _height = ST7735_HEIGHT, _width = ST7735_WIDTH;
