@@ -34,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-uint8_t r = 0;
+uint8_t r = 3;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -73,15 +73,21 @@ void demoTFT(void)
 
  ST7735_FillScreen(ST7735_BLACK);
  HAL_Delay(500);
- ST7735_DrawImage(0, 0, 128, 128, (uint16_t*) test_img_128x128);
+ ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
+ HAL_Delay(3000);
+ ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
+// HAL_Delay(3000);
+// ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_3);
+ HAL_Delay(3000);
+ ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_4);
  HAL_Delay(3000);
 
- r++;
+// r++;
 }
 
-void copy_1d_to_2d(const uint16_t* one_d, uint16_t two_d[128][128])
+void copy_1d_to_2d(const uint16_t* one_d, uint16_t two_d[160][128])
 {
-    for (int y = 0; y < 128; y++)
+    for (int y = 0; y < 160; y++)
     {
         for (int x = 0; x < 128; x++)
         {
@@ -133,6 +139,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
   copy_1d_to_2d(test_img_128, test_img_128x128);
+  copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
+//  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
+  copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
+
   while (1)
   {
 	  demoTFT();
