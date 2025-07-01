@@ -26,11 +26,16 @@
 #include "st7735.h"
 #include "fonts.h"
 #include "image.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h> //for va_list var arg functions
+#include "user_diskio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+void myprintf(const char *fmt, ...);
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -62,17 +67,32 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
+// Глобальний об'єкт файлової системи
+static FATFS fs;
+// Файловий дескриптор
+static FIL fil;
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void myprintf(const char *fmt, ...) {
+  static char buffer[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+
+  int len = strlen(buffer);
+  HAL_UART_Transmit(&huart2, (uint8_t*)buffer, len, -1);
+
+}
+
 void demoTFT(void)
 {
  ST7735_SetRotation(r);
 
- ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
- HAL_Delay(3000);
+ //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 // HAL_Delay(3000);
 // ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_3);
@@ -93,7 +113,6 @@ void copy_1d_to_2d(const uint16_t* one_d, uint16_t two_d[160][128])
         }
     }
 }
-
 void parse_boot_sector(void)
 {
     BYTE sector_buf[512];
@@ -201,9 +220,9 @@ myprintf("Successfully read %u bytes from file\r\n", br);
 
     myprintf("--- FatFs demo end ---\r\n");
 
-    ST7735_SetRotation(r);
-    copy_1d_to_2d(image_buffer, test_img_128x128_2);
-    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
+//    ST7735_SetRotation(r);
+//    copy_1d_to_2d(image_buffer, test_img_128x128_2);
+//    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 }
 
 void test_lowlevel_sd(void) {
@@ -279,7 +298,6 @@ void test_lowlevel_sd(void) {
 
     myprintf("--- SD Low Level Test End ---\r\n");
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -320,20 +338,24 @@ int main(void)
   ST7735_Init();
   ST7735_Backlight_On();
 
+//testing
+  test_lowlevel_sd();
+  fatfs_demo();
+  parse_boot_sector();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-
-  copy_1d_to_2d(test_img_128, test_img_128x128);
+  //copy_1d_to_2d(test_img_128, test_img_128x128);
   copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
 //  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
-  //copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
+  copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
 
   while (1)
   {
-	  //demoTFT();
+	  demoTFT();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -353,7 +375,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -364,18 +386,11 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 180;
+  RCC_OscInitStruct.PLL.PLLN = 140;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Activate the Over-Drive mode
-  */
-  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
@@ -389,7 +404,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -456,7 +471,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
