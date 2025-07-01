@@ -157,7 +157,7 @@ void fatfs_demo(void)
 {
     FRESULT res;
     UINT br, bw;
-    char read_buf[64];
+
 
     myprintf("\r\n--- FatFs demo start ---\r\n");
 
@@ -170,7 +170,7 @@ void fatfs_demo(void)
     myprintf("File system mounted\r\n");
 
     // 2. Створюємо або відкриваємо файл для запису
-    res = f_open(&fil, "test.txt", FA_WRITE | FA_CREATE_ALWAYS);
+    res = f_open(&fil, "test_1.txt", FA_WRITE | FA_CREATE_ALWAYS);
     if (res != FR_OK) {
         myprintf("f_open write failed: %d\r\n", res);
         return;
@@ -178,35 +178,40 @@ void fatfs_demo(void)
     myprintf("File opened for writing\r\n");
 
     // 3. Записуємо рядок у файл
-    const char *text = "Hello from STM32 FatFs!\r\n";
-    res = f_write(&fil, text, strlen(text), &bw);
-    if (res != FR_OK || bw != strlen(text)) {
+
+    const uint32_t test_img_128_size = sizeof(test_img_128); // Кількість байтів
+
+    res = f_write(&fil, test_img_128, test_img_128_size, &bw);
+    if (res != FR_OK || bw != test_img_128_size) {
         myprintf("f_write failed: %d\r\n", res);
         f_close(&fil);
         return;
     }
-    myprintf("Wrote %u bytes to file\r\n", bw);
+    HAL_Delay(1000);
+    myprintf("Wrote %lu bytes to file\r\n", bw);
 
     // 4. Закриваємо файл після запису
     f_close(&fil);
 
-    // 5. Відкриваємо файл для читання
-    res = f_open(&fil, "test.txt", FA_READ);
-    if (res != FR_OK) {
-        myprintf("f_open read failed: %d\r\n", res);
-        return;
-    }
-    myprintf("File opened for reading\r\n");
+#define IMAGE_SIZE 20480 // кількість елементів uint16_t (не байтів!)
 
-    // 6. Читаємо з файлу і виводимо
-    memset(read_buf, 0, sizeof(read_buf));
-    res = f_read(&fil, read_buf, sizeof(read_buf) - 1, &br);
-    if (res != FR_OK) {
-        myprintf("f_read failed: %d\r\n", res);
-        f_close(&fil);
-        return;
-    }
-    myprintf("Read %u bytes from file: %s\r\n", br, read_buf);
+    uint16_t image_buffer[45000];
+
+ res = f_open(&fil, "test_1.txt", FA_READ);
+if (res != FR_OK) {
+    myprintf("f_open failed: %d\r\n", res);
+    return;
+}
+
+res = f_read(&fil, image_buffer, IMAGE_SIZE * sizeof(uint16_t), &br);
+
+if (res != FR_OK || br != IMAGE_SIZE * sizeof(uint16_t)) {
+    myprintf("f_read failed: %d, read %u bytes\r\n", res, br);
+    return;
+}
+
+myprintf("Successfully read %u bytes from file\r\n", br);
+
 
     // 7. Закриваємо файл після читання
     f_close(&fil);
@@ -215,6 +220,10 @@ void fatfs_demo(void)
     f_mount(NULL, "", 0);
 
     myprintf("--- FatFs demo end ---\r\n");
+
+    ST7735_SetRotation(r);
+    copy_1d_to_2d(image_buffer, test_img_128x128_2);
+    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 }
 
 void test_lowlevel_sd(void) {
@@ -330,23 +339,24 @@ int main(void)
   ST7735_Init();
   ST7735_Backlight_On();
 
+//testing
   test_lowlevel_sd();
   fatfs_demo();
   parse_boot_sector();
-//#include "diskio.h"
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
   //copy_1d_to_2d(test_img_128, test_img_128x128);
-  copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
+  //copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
 //  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
-  copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
+  //copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
 
   while (1)
   {
-	  demoTFT();
+	  //demoTFT();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
