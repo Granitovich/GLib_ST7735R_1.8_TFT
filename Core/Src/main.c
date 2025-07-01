@@ -26,11 +26,16 @@
 #include "st7735.h"
 #include "fonts.h"
 #include "image.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h> //for va_list var arg functions
+#include "user_diskio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+void myprintf(const char *fmt, ...);
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -62,16 +67,32 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
+// Глобальний об'єкт файлової системи
+static FATFS fs;
+// Файловий дескриптор
+static FIL fil;
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void myprintf(const char *fmt, ...) {
+  static char buffer[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+
+  int len = strlen(buffer);
+  HAL_UART_Transmit(&huart2, (uint8_t*)buffer, len, -1);
+
+}
+
 void demoTFT(void)
 {
  ST7735_SetRotation(r);
 
- ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
+ //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
  HAL_Delay(3000);
  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 // HAL_Delay(3000);
@@ -92,6 +113,182 @@ void copy_1d_to_2d(const uint16_t* one_d, uint16_t two_d[160][128])
             two_d[y][x] = one_d[y * 128 + x];
         }
     }
+}
+void parse_boot_sector(void)
+{
+    BYTE sector_buf[512];
+    DRESULT dres = disk_read(0, sector_buf, 0, 1); // Читаємо сектор 0
+
+    if (dres != RES_OK) {
+        myprintf("Can't read boot sector\r\n");
+        return;
+    }
+
+    // BPB розпочинається з байта 11
+    uint16_t bytes_per_sector = sector_buf[11] | (sector_buf[12] << 8);
+    uint8_t sectors_per_cluster = sector_buf[13];
+    uint16_t reserved_sectors = sector_buf[14] | (sector_buf[15] << 8);
+    uint8_t num_fats = sector_buf[16];
+    uint16_t root_entries = sector_buf[17] | (sector_buf[18] << 8);
+    uint16_t total_sectors_16 = sector_buf[19] | (sector_buf[20] << 8);
+    uint32_t total_sectors_32 = *(uint32_t*)&sector_buf[32];
+    uint16_t sectors_per_fat_16 = sector_buf[22] | (sector_buf[23] << 8);
+    uint32_t sectors_per_fat_32 = *(uint32_t*)&sector_buf[36];
+
+    myprintf("FAT Info:\r\n");
+    myprintf("Bytes per sector:      %u\r\n", bytes_per_sector);
+    myprintf("Sectors per cluster:   %u\r\n", sectors_per_cluster);
+    myprintf("Reserved sectors:      %u\r\n", reserved_sectors);
+    myprintf("Number of FATs:        %u\r\n", num_fats);
+    myprintf("Root dir entries:      %u\r\n", root_entries);
+    myprintf("Total sectors (16-bit):%u\r\n", total_sectors_16);
+    myprintf("Total sectors (32-bit):%lu\r\n", total_sectors_32);
+    myprintf("Sectors per FAT (16):  %u\r\n", sectors_per_fat_16);
+    myprintf("Sectors per FAT (32):  %lu\r\n", sectors_per_fat_32);
+
+    // Вивести метку тому (Volume Label)
+    myprintf("Volume label: %.11s\r\n", &sector_buf[43]);
+
+    // Вивести тип FAT
+    myprintf("FAT type string: %.8s\r\n", &sector_buf[54]); // Наприклад, "FAT16   "
+}
+
+void fatfs_demo(void)
+{
+    FRESULT res;
+    UINT br, bw;
+    char read_buf[64];
+
+    myprintf("\r\n--- FatFs demo start ---\r\n");
+
+    // 1. Монтуємо файлову систему
+    res = f_mount(&fs, "", 1);
+    if (res != FR_OK ) {
+        myprintf("f_mount failed: %d\r\n", res);
+        return;
+    }
+    myprintf("File system mounted\r\n");
+
+    // 2. Створюємо або відкриваємо файл для запису
+    res = f_open(&fil, "test.txt", FA_WRITE | FA_CREATE_ALWAYS);
+    if (res != FR_OK) {
+        myprintf("f_open write failed: %d\r\n", res);
+        return;
+    }
+    myprintf("File opened for writing\r\n");
+
+    // 3. Записуємо рядок у файл
+    const char *text = "Hello from STM32 FatFs!\r\n";
+    res = f_write(&fil, text, strlen(text), &bw);
+    if (res != FR_OK || bw != strlen(text)) {
+        myprintf("f_write failed: %d\r\n", res);
+        f_close(&fil);
+        return;
+    }
+    myprintf("Wrote %u bytes to file\r\n", bw);
+
+    // 4. Закриваємо файл після запису
+    f_close(&fil);
+
+    // 5. Відкриваємо файл для читання
+    res = f_open(&fil, "test.txt", FA_READ);
+    if (res != FR_OK) {
+        myprintf("f_open read failed: %d\r\n", res);
+        return;
+    }
+    myprintf("File opened for reading\r\n");
+
+    // 6. Читаємо з файлу і виводимо
+    memset(read_buf, 0, sizeof(read_buf));
+    res = f_read(&fil, read_buf, sizeof(read_buf) - 1, &br);
+    if (res != FR_OK) {
+        myprintf("f_read failed: %d\r\n", res);
+        f_close(&fil);
+        return;
+    }
+    myprintf("Read %u bytes from file: %s\r\n", br, read_buf);
+
+    // 7. Закриваємо файл після читання
+    f_close(&fil);
+
+    // 8. Відмонтовуємо файлову систему (опціонально)
+    f_mount(NULL, "", 0);
+
+    myprintf("--- FatFs demo end ---\r\n");
+}
+
+void test_lowlevel_sd(void) {
+    DSTATUS status;
+    DRESULT res;
+    BYTE buffer[512];
+    BYTE write_data[512];
+    UINT i;
+
+    myprintf("\r\n--- SD Low Level Test Start ---\r\n");
+
+    // 1. Ініціалізація диску
+    status = disk_initialize(0);
+    if (status != 0) {
+        myprintf("disk_initialize failed with status: %d\r\n", status);
+        return;
+    }
+    myprintf("disk_initialize OK\r\n");
+
+    // 2. Перевірка статусу
+    status = disk_status(0);
+    if (status != 0) {
+        myprintf("disk_status reports NOT READY (status=%d)\r\n", status);
+        return;
+    }
+    myprintf("disk_status OK\r\n");
+
+    // 3. Читання 0-го сектора
+    memset(buffer, 0, sizeof(buffer));
+    res = disk_read(0, buffer, 0, 1);
+    if (res != RES_OK) {
+        myprintf("disk_read sector 0 failed with result: %d\r\n", res);
+        return;
+    }
+    myprintf("disk_read sector 0 OK, first 16 bytes:\r\n");
+    for(i = 0; i < 16; i++) {
+        myprintf("%02X ", buffer[i]);
+    }
+    myprintf("\r\n");
+
+    // 4. Підготовка даних для запису в 1-й сектор (наприклад, запишемо інкрементний патерн)
+    for(i = 0; i < 512; i++) {
+        write_data[i] = (BYTE)(i & 0xFF);
+    }
+
+    // 5. Запис у 1-й сектор
+    res = disk_write(0, write_data, 1, 1);
+    if (res != RES_OK) {
+        myprintf("disk_write sector 1 failed with result: %d\r\n", res);
+        return;
+    }
+    myprintf("disk_write sector 1 OK\r\n");
+
+    // 6. Читання назад 1-го сектора і перевірка
+    memset(buffer, 0, sizeof(buffer));
+    res = disk_read(0, buffer, 1, 1);
+    if (res != RES_OK) {
+        myprintf("disk_read sector 1 failed with result: %d\r\n", res);
+        return;
+    }
+    myprintf("disk_read sector 1 OK, first 16 bytes:\r\n");
+    for(i = 0; i < 16; i++) {
+        myprintf("%02X ", buffer[i]);
+    }
+    myprintf("\r\n");
+
+    // 7. Перевірка відповідності записаних та прочитаних даних
+    if (memcmp(write_data, buffer, 512) == 0) {
+        myprintf("Read/Write test PASSED!\r\n");
+    } else {
+        myprintf("Read/Write test FAILED!\r\n");
+    }
+
+    myprintf("--- SD Low Level Test End ---\r\n");
 }
 /* USER CODE END 0 */
 
@@ -132,12 +329,17 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ST7735_Init();
   ST7735_Backlight_On();
+
+  test_lowlevel_sd();
+  fatfs_demo();
+  parse_boot_sector();
+//#include "diskio.h"
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  copy_1d_to_2d(test_img_128, test_img_128x128);
+  //copy_1d_to_2d(test_img_128, test_img_128x128);
   copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
 //  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
   copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
@@ -164,7 +366,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -175,18 +377,11 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 180;
+  RCC_OscInitStruct.PLL.PLLN = 140;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Activate the Over-Drive mode
-  */
-  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
@@ -200,7 +395,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -267,7 +462,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
