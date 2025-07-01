@@ -304,6 +304,32 @@ void test_lowlevel_sd(void) {
 
     myprintf("--- SD Low Level Test End ---\r\n");
 }
+
+#define FILES_COUNT 976
+#define MAX_FILENAME_LEN 20
+
+int fill_file_names(char* files[], int count) {
+    char buff[MAX_FILENAME_LEN];
+    for (int i = 0; i < count; i++) {
+        // Формуємо ім'я файлу
+        int len = snprintf(buff, MAX_FILENAME_LEN, "image_%d.txt", i);
+        if (len < 0 || len >= MAX_FILENAME_LEN) {
+            // Помилка форматування або довжина більша за буфер
+            return -1;
+        }
+        files[i] = malloc(len + 1); // +1 для '\0'
+        if (files[i] == NULL) {
+            // Помилка виділення пам'яті — звільняємо вже виділену
+            for (int j = 0; j < i; j++) {
+                free(files[j]);
+            }
+            return -2;
+        }
+        strcpy(files[i], buff);
+    }
+    return 0; // Успішно
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -343,7 +369,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ST7735_Init();
   ST7735_Backlight_On();
-  char* files[] =
+  char* files[976] =
   {
 	  "image_0.txt",
       "image_1.txt",
@@ -357,6 +383,8 @@ int main(void)
 	  "image_9.txt",
 	  "image_10.txt",
   };
+  fill_file_names(files, 976);
+
   uint16_t (*first_image)[128] = (uint16_t(*)[128])image_11;
 //testing
   //test_lowlevel_sd();
@@ -382,26 +410,12 @@ int main(void)
 
   while (1)
   {
-	  fatfs_read_buff(image_buffer, files[1]);
-	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
-	  HAL_Delay(3000);
+	  for(uint16_t i = 1; i < 976; i++)
+	  {
+		  fatfs_read_buff(image_buffer, files[i]);
+		  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+	  }
 
-	  //fatfs_write(image_2, files[2]);
-	  fatfs_read_buff(image_buffer, files[2]);
-	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
-
-	  HAL_Delay(3000);
-
-	  //fatfs_write(image_3, files[3]);
-	  fatfs_read_buff(image_buffer, files[3]);
-	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
-
-	  HAL_Delay(3000);
-	  //fatfs_write(image_11, files[4]);
-	  fatfs_read_buff(image_buffer, files[4]);
-	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
-
-	  HAL_Delay(3000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -421,7 +435,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -432,11 +446,18 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 140;
+  RCC_OscInitStruct.PLL.PLLN = 180;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Activate the Over-Drive mode
+  */
+  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
@@ -450,7 +471,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
