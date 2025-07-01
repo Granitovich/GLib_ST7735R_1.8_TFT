@@ -56,7 +56,8 @@ DMA_HandleTypeDef hdma_spi1_tx;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint16_t image_buffer[160 * 128];
+uint16_t (*image_2d)[128] = (uint16_t(*)[128])image_buffer;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,11 +94,11 @@ void demoTFT(void)
  ST7735_SetRotation(r);
 
  //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
- ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
+ //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 // HAL_Delay(3000);
 // ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_3);
  HAL_Delay(3000);
- ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_4);
+ //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_4);
  HAL_Delay(3000);
 
 // r++;
@@ -152,39 +153,73 @@ void parse_boot_sector(void)
     myprintf("FAT type string: %.8s\r\n", &sector_buf[54]); // Наприклад, "FAT16   "
 }
 
-void fatfs_demo(void)
+FRESULT fatfs_read_buff(uint16_t* buff, char* name_of_file )
 {
     FRESULT res;
-    UINT br, bw;
+    UINT br;
 
+#define IMAGE_SIZE 20480 // кількість елементів uint16_t (не байтів!)
 
-    myprintf("\r\n--- FatFs demo start ---\r\n");
+ res = f_open(&fil, name_of_file, FA_READ);
+if (res != FR_OK)
+{
+    myprintf("f_open failed: %d\r\n", res);
+    return res;
+}
 
-    // 1. Монтуємо файлову систему
-    res = f_mount(&fs, "", 1);
-    if (res != FR_OK ) {
-        myprintf("f_mount failed: %d\r\n", res);
-        return;
-    }
-    myprintf("File system mounted\r\n");
+res = f_read(&fil, buff, IMAGE_SIZE * sizeof(uint16_t), &br);
+
+if (res != FR_OK || br != IMAGE_SIZE * sizeof(uint16_t))
+{
+    myprintf("f_read failed: %d, read %u bytes\r\n", res, br);
+    return res;
+}
+
+myprintf("Successfully read %u bytes from file\r\n", br);
+
+    // 7. Закриваємо файл після читання
+    f_close(&fil);
+
+    return res;
+
+}
+FRESULT fatfs_init()
+{
+	FRESULT res;
+	 // 1. Монтуємо файлову систему
+	    res = f_mount(&fs, "", 1);
+	    if (res != FR_OK )
+	    {
+	        myprintf("f_mount failed: %d\r\n", res);
+	        return res;
+	    }
+	    myprintf("File system mounted\r\n");
+	    return res;
+}
+FRESULT fatfs_write(const uint16_t* buff, char* name_of_file )
+{
+    FRESULT res;
+    UINT bw;
 
     // 2. Створюємо або відкриваємо файл для запису
-    res = f_open(&fil, "test_1.txt", FA_WRITE | FA_CREATE_ALWAYS);
-    if (res != FR_OK) {
+    res = f_open(&fil, name_of_file, FA_WRITE | FA_CREATE_ALWAYS);
+    if (res != FR_OK)
+    {
         myprintf("f_open write failed: %d\r\n", res);
-        return;
+        return res;
     }
     myprintf("File opened for writing\r\n");
 
-    // 3. Записуємо рядок у файл
+    // 3. Записуємо буфер у файл
 
-    const uint32_t test_img_128_size = sizeof(test_img_128); // Кількість байтів
+    const uint32_t buf_size = 40960; // Кількість байтів
 
-    res = f_write(&fil, test_img_128, test_img_128_size, &bw);
-    if (res != FR_OK || bw != test_img_128_size) {
+    res = f_write(&fil, buff, buf_size, &bw);
+    if (res != FR_OK || bw != buf_size)
+    {
         myprintf("f_write failed: %d\r\n", res);
         f_close(&fil);
-        return;
+        return res;
     }
     HAL_Delay(1000);
     myprintf("Wrote %lu bytes to file\r\n", bw);
@@ -192,37 +227,8 @@ void fatfs_demo(void)
     // 4. Закриваємо файл після запису
     f_close(&fil);
 
-#define IMAGE_SIZE 20480 // кількість елементів uint16_t (не байтів!)
+    return res;
 
-    uint16_t image_buffer[45000];
-
- res = f_open(&fil, "test_1.txt", FA_READ);
-if (res != FR_OK) {
-    myprintf("f_open failed: %d\r\n", res);
-    return;
-}
-
-res = f_read(&fil, image_buffer, IMAGE_SIZE * sizeof(uint16_t), &br);
-
-if (res != FR_OK || br != IMAGE_SIZE * sizeof(uint16_t)) {
-    myprintf("f_read failed: %d, read %u bytes\r\n", res, br);
-    return;
-}
-
-myprintf("Successfully read %u bytes from file\r\n", br);
-
-
-    // 7. Закриваємо файл після читання
-    f_close(&fil);
-
-    // 8. Відмонтовуємо файлову систему (опціонально)
-    f_mount(NULL, "", 0);
-
-    myprintf("--- FatFs demo end ---\r\n");
-
-//    ST7735_SetRotation(r);
-//    copy_1d_to_2d(image_buffer, test_img_128x128_2);
-//    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
 }
 
 void test_lowlevel_sd(void) {
@@ -337,11 +343,32 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ST7735_Init();
   ST7735_Backlight_On();
-
+  char* files[] =
+  {
+	  "image_0.txt",
+      "image_1.txt",
+      "image_2.txt",
+      "image_3.txt",
+	  "image_4.txt",
+	  "image_5.txt",
+	  "image_6.txt",
+	  "image_7.txt",
+	  "image_8.txt",
+	  "image_9.txt",
+	  "image_10.txt",
+  };
+  uint16_t (*first_image)[128] = (uint16_t(*)[128])image_11;
 //testing
-  test_lowlevel_sd();
-  fatfs_demo();
-  parse_boot_sector();
+  //test_lowlevel_sd();
+  ST7735_SetRotation(r);
+  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) first_image);
+
+  fatfs_init();
+  HAL_Delay(3000);
+
+  //fatfs_write(image_1, files[1]);
+
+  //parse_boot_sector();
 
   /* USER CODE END 2 */
 
@@ -349,13 +376,32 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
   //copy_1d_to_2d(test_img_128, test_img_128x128);
-  copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
+  //copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
 //  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
-  copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
+  //copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
 
   while (1)
   {
-	  demoTFT();
+	  fatfs_read_buff(image_buffer, files[1]);
+	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+	  HAL_Delay(3000);
+
+	  //fatfs_write(image_2, files[2]);
+	  fatfs_read_buff(image_buffer, files[2]);
+	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+
+	  HAL_Delay(3000);
+
+	  //fatfs_write(image_3, files[3]);
+	  fatfs_read_buff(image_buffer, files[3]);
+	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+
+	  HAL_Delay(3000);
+	  //fatfs_write(image_11, files[4]);
+	  fatfs_read_buff(image_buffer, files[4]);
+	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+
+	  HAL_Delay(3000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
