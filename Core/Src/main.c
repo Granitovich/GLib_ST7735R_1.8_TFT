@@ -56,11 +56,12 @@ DMA_HandleTypeDef hdma_spi1_tx;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint16_t image_buffer_a[160 * 128];
-uint16_t image_buffer_b[160 * 128];
-uint16_t (*image_2d_a)[128] = (uint16_t(*)[128])image_buffer_a;
-uint16_t (*image_2d_b)[128] = (uint16_t(*)[128])image_buffer_b;
-uint8_t flag_use = 1;
+uint16_t image_buffer[160 * 128];
+
+uint16_t (*image_2d)[128] = (uint16_t(*)[128])image_buffer;
+
+#define FRAME_SIZE (160*128*2)  // 40960 байт
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -333,6 +334,11 @@ int fill_file_names(char* files[], int count) {
     return 0; // Успішно
 }
 
+void print_error_msg(void)
+{
+	uint16_t (*ptr_error_image)[128] = (uint16_t(*)[128])error_image;
+    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) ptr_error_image);
+}
 /* USER CODE END 0 */
 
 /**
@@ -372,7 +378,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ST7735_Init();
   ST7735_Backlight_On();
-  char* files[976] =
+  char* files[1002] =
   {
 	  "image_0.txt",
       "image_1.txt",
@@ -386,16 +392,15 @@ int main(void)
 	  "image_9.txt",
 	  "image_10.txt",
   };
-  fill_file_names(files, 976);
+  fill_file_names(files, 1001);
 
-  uint16_t (*first_image)[128] = (uint16_t(*)[128])image_11;
+  uint16_t (*first_image)[128] = (uint16_t(*)[128])Ektos_image;
 //testing
   //test_lowlevel_sd();
   ST7735_SetRotation(r);
   ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) first_image);
 
-  fatfs_init();
-  HAL_Delay(3000);
+
 
   //fatfs_write(image_1, files[1]);
 
@@ -406,32 +411,48 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  //copy_1d_to_2d(test_img_128, test_img_128x128);
-  //copy_1d_to_2d(test_img_128_2, test_img_128x128_2);
-//  copy_1d_to_2d(test_img_128_3, test_img_128x128_3);
-  //copy_1d_to_2d(test_img_128_4, test_img_128x128_4);
 
+  FIL file;
+  FRESULT res;
+  UINT br;
+
+  fatfs_init();
+  HAL_Delay(1000);
+
+  if( FR_OK != f_open(&file, "i.BIN", FA_READ))
+  {
+	  uint16_t (*ptr_error_image)[128] = (uint16_t(*)[128])error_image;
+	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) ptr_error_image);
+  }
+
+  static uint16_t counter = 0;
   while (1)
   {
-	  for(uint16_t i = 1; i < 976; i++)
+	  if (counter == 0 )
 	  {
-		  if (flag_use)
+		  if( FR_OK != f_open(&file, "i.BIN", FA_READ))
 		  {
-		      fatfs_read_buff(image_buffer_a, files[i]);
-		      HAL_Delay(1);
-		      ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d_a);
+			  print_error_msg();
 		  }
-		  else
-		  {
-		      fatfs_read_buff(image_buffer_b, files[i]);
-		      HAL_Delay(1);
-		      ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d_b);
-		  }
-
-		  flag_use = !flag_use;
-
 	  }
+	  uint32_t offset = counter * FRAME_SIZE;
 
+	  res = f_lseek(&file, offset);
+	  if (res != FR_OK)
+	  {
+		  print_error_msg();
+	  }
+	  res = f_read(&file, image_buffer, FRAME_SIZE, &br);
+	  if (res != FR_OK || br != FRAME_SIZE)
+	  {
+		  print_error_msg();
+	  }
+	  else
+	  {
+		  // Тепер image_buffer містить кадр, можна відображати:
+		  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d);
+		  counter = (counter +1 ) % 1001;
+	  }
 
     /* USER CODE END WHILE */
 
