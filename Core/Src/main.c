@@ -56,8 +56,11 @@ DMA_HandleTypeDef hdma_spi1_tx;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint16_t image_buffer[160 * 128];
-uint16_t (*image_2d)[128] = (uint16_t(*)[128])image_buffer;
+uint16_t image_buffer_a[160 * 128];
+uint16_t image_buffer_b[160 * 128];
+uint16_t (*image_2d_a)[128] = (uint16_t(*)[128])image_buffer_a;
+uint16_t (*image_2d_b)[128] = (uint16_t(*)[128])image_buffer_b;
+uint8_t flag_use = 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -312,7 +315,7 @@ int fill_file_names(char* files[], int count) {
     char buff[MAX_FILENAME_LEN];
     for (int i = 0; i < count; i++) {
         // Формуємо ім'я файлу
-        int len = snprintf(buff, MAX_FILENAME_LEN, "image_%d.txt", i);
+        int len = snprintf(buff, MAX_FILENAME_LEN, "i%d.txt", i);
         if (len < 0 || len >= MAX_FILENAME_LEN) {
             // Помилка форматування або довжина більша за буфер
             return -1;
@@ -412,9 +415,23 @@ int main(void)
   {
 	  for(uint16_t i = 1; i < 976; i++)
 	  {
-		  fatfs_read_buff(image_buffer, files[i]);
-		  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) image_2d);
+		  if (flag_use)
+		  {
+		      fatfs_read_buff(image_buffer_a, files[i]);
+		      HAL_Delay(1);
+		      ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d_a);
+		  }
+		  else
+		  {
+		      fatfs_read_buff(image_buffer_b, files[i]);
+		      HAL_Delay(1);
+		      ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d_b);
+		  }
+
+		  flag_use = !flag_use;
+
 	  }
+
 
     /* USER CODE END WHILE */
 
@@ -500,7 +517,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -538,7 +555,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
