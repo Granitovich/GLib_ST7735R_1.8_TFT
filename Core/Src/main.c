@@ -40,7 +40,7 @@ void myprintf(const char *fmt, ...);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-uint8_t r = 3;
+const uint8_t rotation = 3;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,7 +95,7 @@ void myprintf(const char *fmt, ...) {
 
 void demoTFT(void)
 {
- ST7735_SetRotation(r);
+ ST7735_SetRotation(rotation);
 
  //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128);
  //ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) test_img_128x128_2);
@@ -309,22 +309,30 @@ void test_lowlevel_sd(void) {
     myprintf("--- SD Low Level Test End ---\r\n");
 }
 
-#define FILES_COUNT 976
-#define MAX_FILENAME_LEN 20
 
-int fill_file_names(char* files[], int count) {
+
+int fill_file_names(char* files[], int count)
+{
+	const uint8_t MAX_FILENAME_LEN = 10;
+
     char buff[MAX_FILENAME_LEN];
-    for (int i = 0; i < count; i++) {
+
+    for (int i = 0; i < count; i++)
+    {
         // Формуємо ім'я файлу
         int len = snprintf(buff, MAX_FILENAME_LEN, "i%d.txt", i);
-        if (len < 0 || len >= MAX_FILENAME_LEN) {
+
+        if (len < 0 || len >= MAX_FILENAME_LEN)
+        {
             // Помилка форматування або довжина більша за буфер
             return -1;
         }
         files[i] = malloc(len + 1); // +1 для '\0'
-        if (files[i] == NULL) {
-            // Помилка виділення пам'яті — звільняємо вже виділену
-            for (int j = 0; j < i; j++) {
+        if (files[i] == NULL)
+        {
+        	// Помилка виділення пам'яті — звільняємо вже виділену
+            for (int j = 0; j < i; j++)
+            {
                 free(files[j]);
             }
             return -2;
@@ -334,10 +342,54 @@ int fill_file_names(char* files[], int count) {
     return 0; // Успішно
 }
 
-void print_error_msg(void)
+void free_file_names(char* files[], int count)
 {
-	uint16_t (*ptr_error_image)[128] = (uint16_t(*)[128])error_image;
-    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) ptr_error_image);
+    for (int i = 0; i < count; i++)
+    {
+        if (files[i] != NULL)
+        {
+            free(files[i]);
+            files[i] = NULL;  // Щоб уникнути випадкового повторного звільнення
+        }
+    }
+}
+void draw_image(const uint16_t* image)
+{
+	uint16_t (*ptr_2d)[128] = (uint16_t(*)[128])image;
+    ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) ptr_2d);
+}
+
+void draw_1_file(const uint16_t number_of_frames, char* file_name)
+{
+	FIL file;
+	UINT br;
+	static uint16_t counter = 0;
+
+	if (counter == 0 )
+	{
+		if( FR_OK != f_open(&file, file_name, FA_READ))
+		{
+			draw_image(error_image);
+		}
+	}
+
+	uint32_t offset = counter * FRAME_SIZE;
+
+	if (f_lseek(&file, offset) != FR_OK)
+	{
+		draw_image(error_image);
+	}
+
+	if (f_read(&file, image_buffer, FRAME_SIZE, &br) != FR_OK || br != FRAME_SIZE)
+	{
+		draw_image(error_image);
+	}
+	else
+	{
+		ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d);
+		counter = ( counter + 1 ) % number_of_frames;
+	}
+
 }
 /* USER CODE END 0 */
 
@@ -378,33 +430,18 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ST7735_Init();
   ST7735_Backlight_On();
-  char* files[1002] =
+  ST7735_SetRotation(rotation);
+  draw_image(Ektos_image);
+  fatfs_init();
+  HAL_Delay(1000);
+
+#ifdef IMAGE
+  char* file_names[1002] =
   {
 	  "image_0.txt",
-      "image_1.txt",
-      "image_2.txt",
-      "image_3.txt",
-	  "image_4.txt",
-	  "image_5.txt",
-	  "image_6.txt",
-	  "image_7.txt",
-	  "image_8.txt",
-	  "image_9.txt",
-	  "image_10.txt",
   };
-  fill_file_names(files, 1001);
-
-  uint16_t (*first_image)[128] = (uint16_t(*)[128])Ektos_image;
-//testing
-  //test_lowlevel_sd();
-  ST7735_SetRotation(r);
-  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) first_image);
-
-
-
-  //fatfs_write(image_1, files[1]);
-
-  //parse_boot_sector();
+  fill_file_names(file_names, 1001);
+#endif
 
   /* USER CODE END 2 */
 
@@ -412,48 +449,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
 
-  FIL file;
-  FRESULT res;
-  UINT br;
+  const  uint16_t number_of_frames = 975;
 
-  fatfs_init();
-  HAL_Delay(1000);
-
-  if( FR_OK != f_open(&file, "i.BIN", FA_READ))
-  {
-	  uint16_t (*ptr_error_image)[128] = (uint16_t(*)[128])error_image;
-	  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*) ptr_error_image);
-  }
-
-  static uint16_t counter = 0;
   while (1)
   {
-	  if (counter == 0 )
-	  {
-		  if( FR_OK != f_open(&file, "i.BIN", FA_READ))
-		  {
-			  print_error_msg();
-		  }
-	  }
-	  uint32_t offset = counter * FRAME_SIZE;
-
-	  res = f_lseek(&file, offset);
-	  if (res != FR_OK)
-	  {
-		  print_error_msg();
-	  }
-	  res = f_read(&file, image_buffer, FRAME_SIZE, &br);
-	  if (res != FR_OK || br != FRAME_SIZE)
-	  {
-		  print_error_msg();
-	  }
-	  else
-	  {
-		  // Тепер image_buffer містить кадр, можна відображати:
-		  ST7735_DrawImage(0, 0, 160, 128, (uint16_t*)image_2d);
-		  counter = (counter +1 ) % 1001;
-	  }
-
+	  draw_1_file(number_of_frames, "i.BIN");
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
