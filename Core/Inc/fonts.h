@@ -16,12 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __FONTS_H__
-#define __FONTS_H__
+#pragma once
 
 #include <stdint.h>
 
-typedef struct {
+typedef struct
+{
     const uint8_t width;
     uint8_t height;
     const uint16_t *data;
@@ -32,4 +32,4 @@ extern FontDef Font_7x10;
 extern FontDef Font_11x18;
 extern FontDef Font_16x26;
 
-#endif // __FONTS_H__
+
