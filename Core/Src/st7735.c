@@ -111,8 +111,10 @@ static void ST7735_WriteCommand       (uint8_t cmd);
 static void ST7735_WriteData          (uint8_t* buff, size_t buff_size);
 static void ST7735_ExecuteCommandList (const uint8_t *addr);
 static void ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
-static void ST7735_WriteChar          (uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
 
+#ifdef TESTING
+static void ST7735_WriteChar          (uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
+#endif
 
 static void ST7735_Reset()
 {
@@ -182,31 +184,6 @@ static void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t 
     ST7735_WriteCommand(ST7735_RAMWR);
 }
 
-static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor)
-{
-    uint32_t i, b, j;
-
-    ST7735_SetAddressWindow(x, y, x+font.width-1, y+font.height-1);
-
-    for(i = 0; i < font.height; i++)
-    {
-        b = font.data[(ch - 32) * font.height + i];
-        for(j = 0; j < font.width; j++)
-        {
-            if((b << j) & 0x8000)
-            {
-                uint8_t data[] = { color >> 8, color & 0xFF };
-                ST7735_WriteData(data, sizeof(data));
-            }
-            else
-            {
-                uint8_t data[] = { bgcolor >> 8, bgcolor & 0xFF };
-                ST7735_WriteData(data, sizeof(data));
-            }
-        }
-    }
-}
-
 
 void ST7735_Backlight_On(void)
 {
@@ -225,6 +202,50 @@ void ST7735_Init()
     ST7735_ExecuteCommandList(init_cmds1);
     ST7735_ExecuteCommandList(init_cmds2);
     ST7735_ExecuteCommandList(init_cmds3);
+    TFT_CS_H();
+}
+
+void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
+{
+    if((x >= _width) || (y >= _height))
+        return;
+
+    TFT_CS_L();
+
+    ST7735_SetAddressWindow(x, y, x+1, y+1);
+    uint8_t data[] = { color >> 8, color & 0xFF };
+    ST7735_WriteData(data, sizeof(data));
+
+    TFT_CS_H();
+}
+
+void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
+{
+    // clipping
+    if ((x >= _width) || (y >= _height))
+        return;
+    if ((x + w - 1) >= _width)
+        w = _width - x;
+    if ((y + h - 1) >= _height)
+        h = _height - y;
+
+    TFT_CS_L();
+    ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1);
+
+    uint8_t data[2] = { color >> 8, color & 0xFF };
+    TFT_DC_D();
+
+    uint8_t tbuf[w*2];
+    for (y = h; y > 0; y--) {
+        for (int x = w * 2; x >= 0; x -= 2) {
+            tbuf[x] = data[0];
+            tbuf[x + 1] = data[1];
+        }
+        HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, tbuf, sizeof(tbuf));
+        while (hspi1.State == HAL_SPI_STATE_BUSY_TX) {
+        };
+    }
+
     TFT_CS_H();
 }
 
@@ -364,19 +385,7 @@ void ST7735_SetRotation(uint8_t m)
 
 #ifdef TESTING
 
-void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
-{
-    if((x >= _width) || (y >= _height))
-        return;
 
-    TFT_CS_L();
-
-    ST7735_SetAddressWindow(x, y, x+1, y+1);
-    uint8_t data[] = { color >> 8, color & 0xFF };
-    ST7735_WriteData(data, sizeof(data));
-
-    TFT_CS_H();
-}
 
 void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor)
 {
@@ -405,36 +414,6 @@ void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, ui
         x += font.width;
         str++;
     }
-    TFT_CS_H();
-}
-
-void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
-{
-    // clipping
-    if ((x >= _width) || (y >= _height))
-        return;
-    if ((x + w - 1) >= _width)
-        w = _width - x;
-    if ((y + h - 1) >= _height)
-        h = _height - y;
-
-    TFT_CS_L();
-    ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1);
-
-    uint8_t data[2] = { color >> 8, color & 0xFF };
-    TFT_DC_D();
-
-    uint8_t tbuf[w*2];
-    for (y = h; y > 0; y--) {
-        for (int x = w * 2; x >= 0; x -= 2) {
-            tbuf[x] = data[0];
-            tbuf[x + 1] = data[1];
-        }
-        HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, tbuf, sizeof(tbuf));
-        while (hspi1.State == HAL_SPI_STATE_BUSY_TX) {
-        };
-    }
-
     TFT_CS_H();
 }
 
@@ -828,4 +807,31 @@ int16_t ST7735_GetWidth(void)
 {
 	return _width;
 }
+
+static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor)
+{
+    uint32_t i, b, j;
+
+    ST7735_SetAddressWindow(x, y, x+font.width-1, y+font.height-1);
+
+    for(i = 0; i < font.height; i++)
+    {
+        b = font.data[(ch - 32) * font.height + i];
+        for(j = 0; j < font.width; j++)
+        {
+            if((b << j) & 0x8000)
+            {
+                uint8_t data[] = { color >> 8, color & 0xFF };
+                ST7735_WriteData(data, sizeof(data));
+            }
+            else
+            {
+                uint8_t data[] = { bgcolor >> 8, bgcolor & 0xFF };
+                ST7735_WriteData(data, sizeof(data));
+            }
+        }
+    }
+}
+
+
 #endif
