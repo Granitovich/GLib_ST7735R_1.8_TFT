@@ -22,5 +22,5 @@
 
 #define USE_SPI_DMA			//if used DMA for SPI bus
 
-#define OTHER_FUNCTIONALITY
+//#define OTHER_FUNCTIONALITY
 
