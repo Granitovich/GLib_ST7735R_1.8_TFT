@@ -21,21 +21,29 @@
 #include "st7735_cfg.h"
 #include <stdbool.h>
 
-extern SPI_HandleTypeDef ST7735_SPI_PORT;
 
+
+typedef enum
+{
+	DRIVER_ST7735_STATUS_OK = 1,
+	DRIVER_ST7735_STATUS_INVALID_PARAMETERS,
+	DRIVER_ST7735_STATUS_NOT_INITIALIZED,
+	DRIVER_ST7735_STATUS_SEND_ERROR,
+	DRIVER_ST7735_STATUS_TIMEOUT,
+} driver_st7735_status;
 
 void ST7735_Backlight_On (void);
 void ST7735_Backlight_Off(void);
-void ST7735_Init(void);
-void ST7735_DrawPixel        (uint16_t x, uint16_t y, uint16_t color);
-void ST7735_FillRectangle    (uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-void ST7735_DrawImage        (uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data);
-void ST7735_DrawLine         (int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
-void ST7735_DrawFastVLine    (int16_t x, int16_t y, int16_t h, uint16_t color);
-void ST7735_DrawFastHLine    (int16_t x, int16_t y, int16_t w, uint16_t color);
-void ST7735_SetRotation      (uint8_t m);
+driver_st7735_status ST7735_Init          (SPI_HandleTypeDef *hspi);
+driver_st7735_status ST7735_DrawPixel     (uint16_t x, uint16_t y, uint16_t color);
+driver_st7735_status ST7735_FillRectangle (uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+driver_st7735_status ST7735_DrawImage     (uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data);
+driver_st7735_status ST7735_DrawFastVLine (int16_t x, int16_t y, int16_t h, uint16_t color);
+driver_st7735_status ST7735_DrawFastHLine (int16_t x, int16_t y, int16_t w, uint16_t color);
+driver_st7735_status ST7735_DrawLine      (int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
+driver_st7735_status ST7735_SetRotation   (uint8_t rotate);
 
-#ifdef TESTING
+#ifdef OTHER_FUNCTIONALITY
 
 void ST7735_DrawString       (uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor);
 void ST7735_FillScreen       (uint16_t color);

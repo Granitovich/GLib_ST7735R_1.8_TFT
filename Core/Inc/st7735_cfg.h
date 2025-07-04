@@ -20,8 +20,7 @@
 
 #include "main.h"
 
-#define ST7735_SPI_PORT hspi1	//hspi1, hspi2, hspi3...
 #define USE_SPI_DMA			//if used DMA for SPI bus
 
-#define TESTING
+#define OTHER_FUNCTIONALITY
 

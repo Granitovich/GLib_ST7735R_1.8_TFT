@@ -428,7 +428,7 @@ int main(void)
   MX_SPI2_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-  ST7735_Init();
+  ST7735_Init(&hspi1);
   ST7735_Backlight_On();
   ST7735_SetRotation(rotation);
   draw_image(Ektos_image);

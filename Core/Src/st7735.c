@@ -18,6 +18,7 @@
 
 #include "st7735.h"
 #include "stdlib.h"
+#include "assert.h"
 
 typedef enum
 {
@@ -92,25 +93,16 @@ typedef enum
 
 } driver_st7735_constants;
 
-typedef enum
-{
-	DRIVER_ST7735_STATUS_OK = 1,
-	DRIVER_ST7735_STATUS_INVALID_PARAMETERS,
-	DRIVER_ST7735_STATUS_NOT_INITIALIZED,
-	DRIVER_ST7735_STATUS_WRITE_ERROR,
-	DRIVER_ST7735_STATUS_TIMEOUT,
-} driver_st7735_status;
-
-
 typedef struct
 {
+	SPI_HandleTypeDef *hspi;
 	uint8_t data_rotation[4];
 	int16_t height;
 	int16_t width;
 	uint8_t xstart;
 	uint8_t ystart;
 	uint8_t value_rotation;
-}driver_st7735_config;
+} driver_st7735_config;
 
 static driver_st7735_config cfg =
 {
@@ -123,13 +115,7 @@ static driver_st7735_config cfg =
 };
 
 
-
-
-
-
-
-
-// based on Adafruit ST7735 library for Arduino
+/* based on Adafruit ST7735 library for Arduino */
 static const uint8_t
 init_cmds1[] = {            		// Init for 7735R, part 1 (red or green tab)
 		  15,                       // 15 commands in list:
@@ -194,10 +180,10 @@ init_cmds3[] = {            		// Init for 7735R, part 3 (red or green tab)
 		ST7735_DISPON, ST7735_DELAY, 		//  4: Main screen turn on, no args w/delay
 		100 };                  	//     100 ms delay
 
-static void ST7735_WriteCommand       (uint8_t cmd);
-static void ST7735_WriteData          (uint8_t* buff, size_t buff_size);
-static void ST7735_ExecuteCommandList (const uint8_t *addr);
-static void ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
+static driver_st7735_status ST7735_WriteCommand       (uint8_t cmd);
+static driver_st7735_status ST7735_WriteData          (uint8_t* buff, size_t buff_size);
+static driver_st7735_status ST7735_ExecuteCommandList (const uint8_t *addr);
+static driver_st7735_status ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
 
 static inline void swap_int16_t(int16_t* a, int16_t* b)
 {
@@ -219,7 +205,7 @@ __attribute__((always_inline)) static inline void GPIO_SetPin(GPIO_TypeDef* port
 }
 
 
-#ifdef TESTING
+#ifdef OTHER_FUNCTIONALITY
 
 static void ST7735_WriteChar          (uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
 
@@ -232,21 +218,38 @@ static void ST7735_Reset()
 	GPIO_SetPin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, true);
 }
 
-static void ST7735_WriteCommand(uint8_t cmd)
+static driver_st7735_status ST7735_WriteCommand(uint8_t cmd)
 {
 	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, false);
-	HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, &cmd, sizeof(cmd));
-	while(hspi1.State == HAL_SPI_STATE_BUSY_TX);
+
+	if ( HAL_OK != HAL_SPI_Transmit_DMA(cfg.hspi, &cmd, sizeof(cmd)) )
+	{
+		return DRIVER_ST7735_STATUS_SEND_ERROR;
+	}
+	else
+	{
+		while(cfg.hspi->State == HAL_SPI_STATE_BUSY_TX);
+		return DRIVER_ST7735_STATUS_OK;
+	}
+
 }
 
-static void ST7735_WriteData(uint8_t* buff, size_t buff_size)
+static driver_st7735_status ST7735_WriteData(uint8_t* buff, size_t buff_size)
 {
 	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, true);
-	HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, buff, buff_size);
-	while(hspi1.State == HAL_SPI_STATE_BUSY_TX);
+
+	if ( HAL_OK != HAL_SPI_Transmit_DMA(cfg.hspi, buff, buff_size) )
+	{
+		return DRIVER_ST7735_STATUS_SEND_ERROR;
+	}
+	else
+	{
+		while(cfg.hspi->State == HAL_SPI_STATE_BUSY_TX);
+		return DRIVER_ST7735_STATUS_OK;
+	}
 }
 
-static void ST7735_ExecuteCommandList(const uint8_t *addr)
+static driver_st7735_status ST7735_ExecuteCommandList(const uint8_t *addr)
 {
     uint8_t numCommands, numArgs;
     uint16_t ms;
@@ -255,18 +258,24 @@ static void ST7735_ExecuteCommandList(const uint8_t *addr)
     while(numCommands--)
     {
     	uint8_t cmd = *addr++;
-        ST7735_WriteCommand(cmd);
+
+    	if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(cmd))
+    	{
+    		return DRIVER_ST7735_STATUS_SEND_ERROR;
+    	}
 
         numArgs = *addr++;
-        // If high bit set, delay follows args
+        /* If high bit set, delay follows args */
         ms = numArgs & ST7735_DELAY;
         numArgs &= ~ST7735_DELAY;
         if(numArgs)
         {
-            ST7735_WriteData((uint8_t*)addr, numArgs);
+            if (DRIVER_ST7735_STATUS_OK != ST7735_WriteData((uint8_t*)addr, numArgs))
+            {
+            	return DRIVER_ST7735_STATUS_SEND_ERROR;
+            }
             addr += numArgs;
         }
-
         if(ms)
         {
             ms = *addr++;
@@ -274,23 +283,41 @@ static void ST7735_ExecuteCommandList(const uint8_t *addr)
             HAL_Delay(ms);
         }
     }
+    return DRIVER_ST7735_STATUS_OK;
 }
 
-static void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
+static driver_st7735_status ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
 {
-    // column address set
-    ST7735_WriteCommand(ST7735_CASET);
+    /* column address set */
+	if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_CASET))
+	{
+		return DRIVER_ST7735_STATUS_SEND_ERROR;
+	}
     uint8_t data[] = { 0x00, x0 + cfg.xstart, 0x00, x1 + cfg.xstart };
-    ST7735_WriteData(data, sizeof(data));
 
-    // row address set
-    ST7735_WriteCommand(ST7735_RASET);
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
+    /* row address set */
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RASET))
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
     data[1] = y0 + cfg.ystart;
     data[3] = y1 + cfg.ystart;
-    ST7735_WriteData(data, sizeof(data));
 
-    // write to RAM
-    ST7735_WriteCommand(ST7735_RAMWR);
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
+    /* write to RAM */
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RAMWR))
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
+
+    return DRIVER_ST7735_STATUS_OK;
 }
 
 
@@ -304,74 +331,121 @@ void ST7735_Backlight_Off(void)
 	GPIO_SetPin(ST7735_BL_GPIO_Port, ST7735_BL_Pin, false);
 }
 
-void ST7735_Init()
+driver_st7735_status ST7735_Init(SPI_HandleTypeDef *hspi)
 {
+	assert(hspi != NULL);
+	cfg.hspi = hspi;
+
 	GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
     ST7735_Reset();
-    ST7735_ExecuteCommandList(init_cmds1);
-    ST7735_ExecuteCommandList(init_cmds2);
-    ST7735_ExecuteCommandList(init_cmds3);
+
+    if( DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds1)  ||
+    	DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds2)  ||
+		DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds3))
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
+
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+
+    return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
+driver_st7735_status ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
-    if((x >= cfg.width) || (y >= cfg.height))
-        return;
+    if ( (x >= cfg.width) || (y >= cfg.height) )
+    {
+    	return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
+    }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
 
-    ST7735_SetAddressWindow(x, y, x+1, y+1);
+    if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x+1, y+1))
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
     uint8_t data[] = { color >> 8, color & 0xFF };
-    ST7735_WriteData(data, sizeof(data));
+
+    if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+
+    return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
+driver_st7735_status ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
     // clipping
-    if ((x >= cfg.width) || (y >= cfg.height))
-        return;
+    if ( (x >= cfg.width) || (y >= cfg.height) )
+    {
+    	return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
+    }
+
     if ((x + w - 1) >= cfg.width)
-        w = cfg.width - x;
+    {
+    	w = cfg.width - x;
+    }
     if ((y + h - 1) >= cfg.height)
-        h = cfg.height - y;
+    {
+    	 h = cfg.height - y;
+    }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
-    ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1);
+    if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1) )
+    {
+    	return DRIVER_ST7735_STATUS_OK;
+    }
 
-    uint8_t data[2] = { color >> 8, color & 0xFF };
+    const uint8_t data[2] = { color >> 8, color & 0xFF };
     GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, true);
 
     uint8_t tbuf[w*2];
-    for (y = h; y > 0; y--) {
-        for (int x = w * 2; x >= 0; x -= 2) {
+    for (y = h; y > 0; y--)
+    {
+        for (int x = w * 2; x >= 0; x -= 2)
+        {
             tbuf[x] = data[0];
             tbuf[x + 1] = data[1];
         }
-        HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, tbuf, sizeof(tbuf));
-        while (hspi1.State == HAL_SPI_STATE_BUSY_TX) {
-        };
+        if ( HAL_OK != HAL_SPI_Transmit_DMA(cfg.hspi, tbuf, sizeof(tbuf)) )
+        {
+        	return DRIVER_ST7735_STATUS_SEND_ERROR;
+        }
+        else
+        {
+        while (cfg.hspi->State == HAL_SPI_STATE_BUSY_TX) {};
+        }
     }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+
+    return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
+driver_st7735_status ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
 {
-    if( ((x >= cfg.width) || (y >= cfg.height)) || ( (x + w - 1) >= cfg.width ) || ( (y + h - 1) >= cfg.height ) )
+    if ( ((x >= cfg.width) || (y >= cfg.height)) || ( (x + w - 1) >= cfg.width ) || ( (y + h - 1) >= cfg.height ) )
     {
-    	return;
+    	return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
     }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
-    ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
-    ST7735_WriteData((uint8_t*)data, sizeof(uint16_t)*w*h);
+
+    if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x+w-1, y+h-1)  ||
+        DRIVER_ST7735_STATUS_OK != ST7735_WriteData((uint8_t*)data, sizeof(uint16_t)*w*h) )
+    {
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
+    }
+
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+
+    return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
+driver_st7735_status ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
 {
 	int16_t steep = abs(y1 - y0) > abs(x1 - x0);
 	if (steep)
@@ -406,11 +480,17 @@ void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t co
 	{
 		if (steep)
 		{
-			ST7735_DrawPixel(y0, x0, color);
+			if( DRIVER_ST7735_STATUS_OK != ST7735_DrawPixel(y0, x0, color))
+			{
+				return DRIVER_ST7735_STATUS_SEND_ERROR;
+			}
 		}
 		else
 		{
-			ST7735_DrawPixel(x0, y0, color);
+			if( DRIVER_ST7735_STATUS_OK != ST7735_DrawPixel(x0, y0, color))
+			{
+				return DRIVER_ST7735_STATUS_SEND_ERROR;
+			}
 		}
 		err -= dy;
 		if (err < 0)
@@ -419,40 +499,69 @@ void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t co
 			err += dx;
 		}
 	}
+	return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
+driver_st7735_status ST7735_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
 {
-  // Rudimentary clipping
-  if ((x >= cfg.width) || (y >= cfg.height)) return;
-  if ((y + h - 1) >= cfg.height) h = cfg.height - y;
 
-  ST7735_FillRectangle(x, y, 1, h, color);
+  if ((x >= cfg.width) || (y >= cfg.height))
+  {
+	  return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
+  }
+  if ((y + h - 1) >= cfg.height)
+  {
+	  h = cfg.height - y;
+  }
+
+  if( DRIVER_ST7735_STATUS_OK != ST7735_FillRectangle(x, y, 1, h, color))
+  {
+	  return DRIVER_ST7735_STATUS_SEND_ERROR;
+  }
+
+
+  return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_DrawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
+driver_st7735_status ST7735_DrawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
 {
-  // Rudimentary clipping
-  if ((x >= cfg.width) || (y >= cfg.height)) return;
-  if ((x + w - 1) >= cfg.width)  w = cfg.width - x;
 
-  ST7735_FillRectangle(x, y, w, 1, color);
+  if ((x >= cfg.width) || (y >= cfg.height))
+  {
+	  return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
+  }
+  if ((x + w - 1) >= cfg.width)
+  {
+	  w = cfg.width - x;
+  }
+  if( DRIVER_ST7735_STATUS_OK != ST7735_FillRectangle(x, y, w, 1, color))
+  {
+	  return DRIVER_ST7735_STATUS_SEND_ERROR;
+  }
+
+  return DRIVER_ST7735_STATUS_OK;
 }
 
-void ST7735_SetRotation(uint8_t m)
+driver_st7735_status ST7735_SetRotation(uint8_t m)
 {
-	cfg.value_rotation = m % 4;
+  cfg.value_rotation = m % 4;
 
   GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
 
-  ST7735_WriteCommand(ST7735_MADCTL);
+  if( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_MADCTL))
+  {
+	  return DRIVER_ST7735_STATUS_SEND_ERROR;
+  }
 
   switch (cfg.value_rotation)
   {
     case 0:
     {
     	uint8_t d_r = (cfg.data_rotation[0] | cfg.data_rotation[1] | cfg.data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(&d_r, sizeof(d_r)))
+    	{
+    		return DRIVER_ST7735_STATUS_SEND_ERROR;
+    	}
     	cfg.width  = ST7735_WIDTH;
     	cfg.height = ST7735_HEIGHT;
     	cfg.xstart = ST7735_XSTART;
@@ -462,7 +571,10 @@ void ST7735_SetRotation(uint8_t m)
     case 1:
     {
     	uint8_t d_r = (cfg.data_rotation[1] | cfg.data_rotation[2] | cfg.data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(&d_r, sizeof(d_r)))
+    	{
+    		return DRIVER_ST7735_STATUS_SEND_ERROR;
+    	}
     	cfg.width  = ST7735_HEIGHT;
     	cfg.height = ST7735_WIDTH;
     	cfg.xstart = ST7735_YSTART;
@@ -471,7 +583,10 @@ void ST7735_SetRotation(uint8_t m)
     case 2:
     {
     	uint8_t d_r = cfg.data_rotation[3];
-    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(&d_r, sizeof(d_r)))
+    	{
+    		return DRIVER_ST7735_STATUS_SEND_ERROR;
+    	}
     	cfg.width  = ST7735_WIDTH;
     	cfg.height = ST7735_HEIGHT;
     	cfg.xstart = ST7735_XSTART;
@@ -481,7 +596,10 @@ void ST7735_SetRotation(uint8_t m)
     case 3:
     {
     	uint8_t d_r = (cfg.data_rotation[0] | cfg.data_rotation[2] | cfg.data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(&d_r, sizeof(d_r)))
+    	{
+    		return DRIVER_ST7735_STATUS_SEND_ERROR;
+    	}
     	cfg.width  = ST7735_HEIGHT;
     	cfg.height = ST7735_WIDTH;
     	cfg.xstart = ST7735_YSTART;
@@ -490,11 +608,11 @@ void ST7735_SetRotation(uint8_t m)
       break;
   }
   GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+
+  return DRIVER_ST7735_STATUS_OK;
 }
 
-#ifdef TESTING
-
-
+#ifdef OTHER_FUNCTIONALITY
 
 void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor)
 {
@@ -513,7 +631,7 @@ void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, ui
 
             if(*str == ' ')
             {
-                // skip spaces in the beginning of the new line
+                /* skip spaces in the beginning of the new line */
                 str++;
                 continue;
             }
@@ -866,12 +984,15 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
   sa   = 0,
   sb   = 0;
 
-  // For upper part of triangle, find scanline crossings for segments
-  // 0-1 and 0-2.  If y1=y2 (flat-bottomed triangle), the scanline y1
-  // is included here (and second loop will be skipped, avoiding a /0
-  // error there), otherwise scanline y1 is skipped here and handled
-  // in the second loop...which also avoids a /0 error here if y0=y1
-  // (flat-topped triangle).
+/*
+   For upper part of triangle, find scanline crossings for segments
+   0-1 and 0-2.  If y1=y2 (flat-bottomed triangle), the scanline y1
+   is included here (and second loop will be skipped, avoiding a /0
+   error there), otherwise scanline y1 is skipped here and handled
+   in the second loop...which also avoids a /0 error here if y0=y1
+   (flat-topped triangle).
+*/
+
   if (y1 == y2) last = y1;  // Include y1 scanline
   else         last = y1 - 1; // Skip it
 
@@ -885,9 +1006,10 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
     if (a > b) swap_int16_t(&a, &b);
     ST7735_DrawFastHLine(a, y, b - a + 1, color);
   }
-
-  // For lower part of triangle, find scanline crossings for segments
-  // 0-2 and 1-2.  This loop is skipped if y1=y2.
+/*
+   For lower part of triangle, find scanline crossings for segments
+   0-2 and 1-2.  This loop is skipped if y1=y2.
+*/
   sa = dx12 * (y - y1);
   sb = dx02 * (y - y0);
   for (; y <= y2; y++)
