@@ -1,50 +1,141 @@
 /*
- * st7735.c
+ * GLib_ST7735R_1.8_TFT
+ * Copyright (C) 2025 Anatoliy Lizanets, Andrew Kushyk, Andriy Honcharenko, ScarsFun
  *
- *  Created on: 16 ���. 2019 �.
- *      Author: Andriy Honcharenko
- *        Blog: https://stm32withoutfear.blogspot.com
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "st7735.h"
 #include "stdlib.h"
 
-#define TFT_BL_H() (ST7735_BL_GPIO_Port->BSRR = ST7735_BL_Pin)
-#define TFT_BL_L() (ST7735_BL_GPIO_Port->BSRR = ((uint32_t)ST7735_BL_Pin << 16))
+typedef enum
+{
+    ST7735_MADCTL_MY    = 0x80,
+    ST7735_MADCTL_MX    = 0x40,
+    ST7735_MADCTL_MV    = 0x20,
+    ST7735_MADCTL_RGB   = 0x00,
+    ST7735_MADCTL_BGR   = 0x08,
 
-#define TFT_CS_H() (ST7735_CS_GPIO_Port->BSRR = ST7735_CS_Pin)
-#define TFT_CS_L() (ST7735_CS_GPIO_Port->BSRR = ((uint32_t)ST7735_CS_Pin << 16))
+    ST7735_WIDTH        = 128,
+    ST7735_HEIGHT       = 160,
+    ST7735_XSTART       = 0,
+    ST7735_YSTART       = 0,
+    ST7735_DATA_ROTATION = (ST7735_MADCTL_MX | ST7735_MADCTL_MY),
 
-#define TFT_DC_D() (ST7735_DC_GPIO_Port->BSRR = ST7735_DC_Pin)
-#define TFT_DC_C() (ST7735_DC_GPIO_Port->BSRR = ((uint32_t)ST7735_DC_Pin << 16))
+    ST7735_NOP          = 0x00,
+    ST7735_SWRESET      = 0x01,
+    ST7735_RDDID        = 0x04,
+    ST7735_RDDST        = 0x09,
 
-#define TFT_RES_H() (ST7735_RES_GPIO_Port->BSRR = ST7735_RES_Pin)
-#define TFT_RES_L() (ST7735_RES_GPIO_Port->BSRR = ((uint32_t)ST7735_RES_Pin << 16))
+    ST7735_SLPIN        = 0x10,
+    ST7735_SLPOUT       = 0x11,
+    ST7735_PTLON        = 0x12,
+    ST7735_NORON        = 0x13,
 
-#define ST7735_COLOR565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
-#define SWAP_INT16_T(a, b) { int16_t t = a; a = b; b = t; }
-#define DELAY 0x80
+    ST7735_INVOFF       = 0x20,
+    ST7735_INVON        = 0x21,
+    ST7735_DISPOFF      = 0x28,
+    ST7735_DISPON       = 0x29,
+    ST7735_CASET        = 0x2A,
+    ST7735_RASET        = 0x2B,
+    ST7735_RAMWR        = 0x2C,
+    ST7735_RAMRD        = 0x2E,
 
-#if defined(ST7735_1_8_DEFAULT_ORIENTATION) || defined(ST7735S_1_8_DEFAULT_ORIENTATION)
-static uint8_t _data_rotation[4] = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_RGB };
-#endif
+    ST7735_PTLAR        = 0x30,
+    ST7735_COLMOD       = 0x3A,
+    ST7735_MADCTL       = 0x36,
 
-#if defined(ST7735_1_44_DEFAULT_ORIENTATION) || defined(ST7735_MINI_DEFAULT_ORIENTATION)
-static uint8_t _data_rotation[4] = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_BGR };
-#endif
+    ST7735_FRMCTR1      = 0xB1,
+    ST7735_FRMCTR2      = 0xB2,
+    ST7735_FRMCTR3      = 0xB3,
+    ST7735_INVCTR       = 0xB4,
+    ST7735_DISSET5      = 0xB6,
 
-static uint8_t _value_rotation = 0;
-static int16_t _height = ST7735_HEIGHT, _width = ST7735_WIDTH;
-static uint8_t _xstart = ST7735_XSTART, _ystart = ST7735_YSTART;
+    ST7735_PWCTR1       = 0xC0,
+    ST7735_PWCTR2       = 0xC1,
+    ST7735_PWCTR3       = 0xC2,
+    ST7735_PWCTR4       = 0xC3,
+    ST7735_PWCTR5       = 0xC4,
+    ST7735_VMCTR1       = 0xC5,
+
+    ST7735_RDID1        = 0xDA,
+    ST7735_RDID2        = 0xDB,
+    ST7735_RDID3        = 0xDC,
+    ST7735_RDID4        = 0xDD,
+
+    ST7735_PWCTR6       = 0xFC,
+
+    ST7735_GMCTRP1      = 0xE0,
+    ST7735_GMCTRN1      = 0xE1,
+
+    ST7735_BLACK        = 0x0000,
+    ST7735_BLUE         = 0x001F,
+    ST7735_RED          = 0xF800,
+    ST7735_GREEN        = 0x07E0,
+    ST7735_CYAN         = 0x07FF,
+    ST7735_MAGENTA      = 0xF81F,
+    ST7735_YELLOW       = 0xFFE0,
+    ST7735_WHITE        = 0xFFFF,
+
+	ST7735_DELAY        = 0x80,
+
+} driver_st7735_constants;
+
+typedef enum
+{
+	DRIVER_ST7735_STATUS_OK = 1,
+	DRIVER_ST7735_STATUS_INVALID_PARAMETERS,
+	DRIVER_ST7735_STATUS_NOT_INITIALIZED,
+	DRIVER_ST7735_STATUS_WRITE_ERROR,
+	DRIVER_ST7735_STATUS_TIMEOUT,
+} driver_st7735_status;
+
+
+typedef struct
+{
+	uint8_t data_rotation[4];
+	int16_t height;
+	int16_t width;
+	uint8_t xstart;
+	uint8_t ystart;
+	uint8_t value_rotation;
+}driver_st7735_config;
+
+static driver_st7735_config cfg =
+{
+		.data_rotation = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_RGB },
+		.height = ST7735_HEIGHT,
+		.width  = ST7735_WIDTH,
+		.xstart = ST7735_XSTART,
+		.ystart = ST7735_YSTART
+
+};
+
+
+
+
+
+
 
 
 // based on Adafruit ST7735 library for Arduino
 static const uint8_t
 init_cmds1[] = {            		// Init for 7735R, part 1 (red or green tab)
 		  15,                       // 15 commands in list:
-		  ST7735_SWRESET, DELAY,  	//  1: Software reset, 0 args, w/delay
+		  ST7735_SWRESET, ST7735_DELAY,  	//  1: Software reset, 0 args, w/delay
 		  150,                    	//     150 ms delay
-		  ST7735_SLPOUT, DELAY,  	//  2: Out of sleep mode, 0 args, w/delay
+		  ST7735_SLPOUT, ST7735_DELAY,  	//  2: Out of sleep mode, 0 args, w/delay
 		  255,                    	//     500 ms delay
 		  ST7735_FRMCTR1, 3,		//  3: Frame rate ctrl - normal mode, 3 args:
 		  0x01, 0x2C, 0x2D,       	//     Rate = fosc/(1x2+40) * (LINE+2C+2D)
@@ -73,11 +164,10 @@ init_cmds1[] = {            		// Init for 7735R, part 1 (red or green tab)
 		  0x0E,
 		  ST7735_INVOFF, 0,  		// 13: Don't invert display, no args, no delay
 		  ST7735_MADCTL, 1,  		// 14: Memory access control (directions), 1 arg:
-		  ST7735_DATA_ROTATION,     //     row addr/col addr, bottom to top refresh
+		  ST7735_DATA_ROTATION,       //     row addr/col addr, bottom to top refresh
 		  ST7735_COLMOD, 1,  		// 15: set color mode, 1 arg, no delay:
 		  0x05},                 	//     16-bit color
 
-#if (defined(ST7735_IS_128X128) || defined(ST7735_IS_160X128))
 init_cmds2[] = {            // Init for 7735R, part 2 (1.44" display)
 		2,                  //  2 commands in list:
 		ST7735_CASET, 4,  	//  1: Column addr set, 4 args, no delay:
@@ -86,19 +176,6 @@ init_cmds2[] = {            // Init for 7735R, part 2 (1.44" display)
 		ST7735_RASET, 4,  	//  2: Row addr set, 4 args, no delay:
 		0x00, 0x00,         //     XSTART = 0
 		0x00, 0x7F },       //     XEND = 127
-#endif // ST7735_IS_128X128
-
-#ifdef ST7735_IS_160X80
-init_cmds2[] = {					// Init for 7735S, part 2 (160x80 display)
-		3,                        	//  3 commands in list:
-		ST7735_CASET, 4,  			//  1: Column addr set, 4 args, no delay:
-		0x00, 0x00,             	//     XSTART = 0
-		0x00, 0x4F,             	//     XEND = 79
-		ST7735_RASET, 4,  			//  2: Row addr set, 4 args, no delay:
-		0x00, 0x00,             	//     XSTART = 0
-		0x00, 0x9F ,            	//     XEND = 159
-		ST7735_INVON, 0 },        //  3: Invert colors
-#endif
 
 init_cmds3[] = {            		// Init for 7735R, part 3 (red or green tab)
 		4,                        	//  4 commands in list:
@@ -112,65 +189,61 @@ init_cmds3[] = {            		// Init for 7735R, part 3 (red or green tab)
 		0x2E, 0x2C, 0x29, 0x2D,
 		0x2E, 0x2E, 0x37, 0x3F,
 		0x00, 0x00, 0x02, 0x10,
-		ST7735_NORON, DELAY, 		//  3: Normal display on, no args, w/delay
+		ST7735_NORON, ST7735_DELAY, 		//  3: Normal display on, no args, w/delay
 		10,                     	//     10 ms delay
-		ST7735_DISPON, DELAY, 		//  4: Main screen turn on, no args w/delay
+		ST7735_DISPON, ST7735_DELAY, 		//  4: Main screen turn on, no args w/delay
 		100 };                  	//     100 ms delay
 
-static void ST7735_GPIO_Init(void);
-static void ST7735_WriteCommand(uint8_t cmd);
-static void ST7735_WriteData(uint8_t* buff, size_t buff_size);
-static void ST7735_ExecuteCommandList(const uint8_t *addr);
-static void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
-static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
+static void ST7735_WriteCommand       (uint8_t cmd);
+static void ST7735_WriteData          (uint8_t* buff, size_t buff_size);
+static void ST7735_ExecuteCommandList (const uint8_t *addr);
+static void ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
 
-static void ST7735_GPIO_Init(void)
+static inline void swap_int16_t(int16_t* a, int16_t* b)
 {
-//	GPIO_InitTypeDef GPIO_InitStruct = {0};
-//
-//	/* GPIO Ports Clock Enable */
-//	__HAL_RCC_GPIOB_CLK_ENABLE();
-//
-//	/*Configure GPIO pin Output Level */
-//	HAL_GPIO_WritePin(GPIOB, ST7735_RES_Pin|ST7735_DC_Pin|ST7735_CS_Pin|ST7735_BL_Pin, GPIO_PIN_RESET);
-//
-//	/*Configure GPIO pins : ST7735_RES_Pin ST7735_DC_Pin ST7735_CS_Pin ST7735_BL_Pin */
-//	GPIO_InitStruct.Pin = ST7735_RES_Pin|ST7735_DC_Pin|ST7735_CS_Pin|ST7735_BL_Pin;
-//	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-//	GPIO_InitStruct.Pull = GPIO_NOPULL;
-//	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-//	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    int16_t t = *a;
+    *a = *b;
+    *b = t;
 }
+
+__attribute__((always_inline)) static inline void GPIO_SetPin(GPIO_TypeDef* port, uint16_t pin, bool level)
+{
+    if (level)
+    {
+        port->BSRR = pin;
+    }
+    else
+    {
+        port->BSRR = (uint32_t)pin << 16;
+    }
+}
+
+
+#ifdef TESTING
+
+static void ST7735_WriteChar          (uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
+
+#endif
 
 static void ST7735_Reset()
 {
-	TFT_RES_L();
+	GPIO_SetPin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, false);
 	HAL_Delay(20);
-	TFT_RES_H();
+	GPIO_SetPin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, true);
 }
 
 static void ST7735_WriteCommand(uint8_t cmd)
 {
-	TFT_DC_C();
-/*
-#ifdef USE_SPI_DMA
-  completed1 = 0;
+	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, false);
 	HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, &cmd, sizeof(cmd));
-	//while(hspi1.State == HAL_SPI_STATE_BUSY_TX);
-#else*/
-	HAL_SPI_Transmit(&ST7735_SPI_PORT, &cmd, sizeof(cmd), HAL_MAX_DELAY);
-//#endif
+	while(hspi1.State == HAL_SPI_STATE_BUSY_TX);
 }
 
 static void ST7735_WriteData(uint8_t* buff, size_t buff_size)
 {
-	TFT_DC_D();
-#ifdef USE_SPI_DMA
+	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, true);
 	HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, buff, buff_size);
 	while(hspi1.State == HAL_SPI_STATE_BUSY_TX);
-#else
-	HAL_SPI_Transmit(&ST7735_SPI_PORT, buff, buff_size, HAL_MAX_DELAY);
-#endif
 }
 
 static void ST7735_ExecuteCommandList(const uint8_t *addr)
@@ -186,8 +259,8 @@ static void ST7735_ExecuteCommandList(const uint8_t *addr)
 
         numArgs = *addr++;
         // If high bit set, delay follows args
-        ms = numArgs & DELAY;
-        numArgs &= ~DELAY;
+        ms = numArgs & ST7735_DELAY;
+        numArgs &= ~ST7735_DELAY;
         if(numArgs)
         {
             ST7735_WriteData((uint8_t*)addr, numArgs);
@@ -207,80 +280,233 @@ static void ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t 
 {
     // column address set
     ST7735_WriteCommand(ST7735_CASET);
-    uint8_t data[] = { 0x00, x0 + _xstart, 0x00, x1 + _xstart };
+    uint8_t data[] = { 0x00, x0 + cfg.xstart, 0x00, x1 + cfg.xstart };
     ST7735_WriteData(data, sizeof(data));
 
     // row address set
     ST7735_WriteCommand(ST7735_RASET);
-    data[1] = y0 + _ystart;
-    data[3] = y1 + _ystart;
+    data[1] = y0 + cfg.ystart;
+    data[3] = y1 + cfg.ystart;
     ST7735_WriteData(data, sizeof(data));
 
     // write to RAM
     ST7735_WriteCommand(ST7735_RAMWR);
 }
 
-static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor)
+
+void ST7735_Backlight_On(void)
 {
-    uint32_t i, b, j;
+	GPIO_SetPin(ST7735_BL_GPIO_Port, ST7735_BL_Pin, true);
+}
 
-    ST7735_SetAddressWindow(x, y, x+font.width-1, y+font.height-1);
-
-    for(i = 0; i < font.height; i++)
-    {
-        b = font.data[(ch - 32) * font.height + i];
-        for(j = 0; j < font.width; j++)
-        {
-            if((b << j) & 0x8000)
-            {
-                uint8_t data[] = { color >> 8, color & 0xFF };
-                ST7735_WriteData(data, sizeof(data));
-            }
-            else
-            {
-                uint8_t data[] = { bgcolor >> 8, bgcolor & 0xFF };
-                ST7735_WriteData(data, sizeof(data));
-            }
-        }
-    }
+void ST7735_Backlight_Off(void)
+{
+	GPIO_SetPin(ST7735_BL_GPIO_Port, ST7735_BL_Pin, false);
 }
 
 void ST7735_Init()
 {
-	ST7735_GPIO_Init();
-	TFT_CS_L();
+	GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
     ST7735_Reset();
     ST7735_ExecuteCommandList(init_cmds1);
     ST7735_ExecuteCommandList(init_cmds2);
     ST7735_ExecuteCommandList(init_cmds3);
-    TFT_CS_H();
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
 }
 
 void ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
-    if((x >= _width) || (y >= _height))
+    if((x >= cfg.width) || (y >= cfg.height))
         return;
 
-    TFT_CS_L();
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
 
     ST7735_SetAddressWindow(x, y, x+1, y+1);
     uint8_t data[] = { color >> 8, color & 0xFF };
     ST7735_WriteData(data, sizeof(data));
 
-    TFT_CS_H();
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
 }
+
+void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
+{
+    // clipping
+    if ((x >= cfg.width) || (y >= cfg.height))
+        return;
+    if ((x + w - 1) >= cfg.width)
+        w = cfg.width - x;
+    if ((y + h - 1) >= cfg.height)
+        h = cfg.height - y;
+
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
+    ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1);
+
+    uint8_t data[2] = { color >> 8, color & 0xFF };
+    GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, true);
+
+    uint8_t tbuf[w*2];
+    for (y = h; y > 0; y--) {
+        for (int x = w * 2; x >= 0; x -= 2) {
+            tbuf[x] = data[0];
+            tbuf[x + 1] = data[1];
+        }
+        HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, tbuf, sizeof(tbuf));
+        while (hspi1.State == HAL_SPI_STATE_BUSY_TX) {
+        };
+    }
+
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+}
+
+void ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
+{
+    if( ((x >= cfg.width) || (y >= cfg.height)) || ( (x + w - 1) >= cfg.width ) || ( (y + h - 1) >= cfg.height ) )
+    {
+    	return;
+    }
+
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
+    ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
+    ST7735_WriteData((uint8_t*)data, sizeof(uint16_t)*w*h);
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+}
+
+void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
+{
+	int16_t steep = abs(y1 - y0) > abs(x1 - x0);
+	if (steep)
+	{
+		swap_int16_t(&x0, &y0);
+		swap_int16_t(&x1, &y1);
+	}
+
+	if (x0 > x1)
+	{
+		swap_int16_t(&x0, &x1);
+		swap_int16_t(&y0, &y1);
+	}
+
+	int16_t dx, dy;
+	dx = x1 - x0;
+	dy = abs(y1 - y0);
+
+	int16_t err = dx / 2;
+	int16_t ystep;
+
+	if (y0 < y1)
+	{
+		ystep = 1;
+	}
+	else
+	{
+		ystep = -1;
+	}
+
+	for (; x0<=x1; x0++)
+	{
+		if (steep)
+		{
+			ST7735_DrawPixel(y0, x0, color);
+		}
+		else
+		{
+			ST7735_DrawPixel(x0, y0, color);
+		}
+		err -= dy;
+		if (err < 0)
+		{
+			y0 += ystep;
+			err += dx;
+		}
+	}
+}
+
+void ST7735_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
+{
+  // Rudimentary clipping
+  if ((x >= cfg.width) || (y >= cfg.height)) return;
+  if ((y + h - 1) >= cfg.height) h = cfg.height - y;
+
+  ST7735_FillRectangle(x, y, 1, h, color);
+}
+
+void ST7735_DrawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
+{
+  // Rudimentary clipping
+  if ((x >= cfg.width) || (y >= cfg.height)) return;
+  if ((x + w - 1) >= cfg.width)  w = cfg.width - x;
+
+  ST7735_FillRectangle(x, y, w, 1, color);
+}
+
+void ST7735_SetRotation(uint8_t m)
+{
+	cfg.value_rotation = m % 4;
+
+  GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
+
+  ST7735_WriteCommand(ST7735_MADCTL);
+
+  switch (cfg.value_rotation)
+  {
+    case 0:
+    {
+    	uint8_t d_r = (cfg.data_rotation[0] | cfg.data_rotation[1] | cfg.data_rotation[3]);
+    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	cfg.width  = ST7735_WIDTH;
+    	cfg.height = ST7735_HEIGHT;
+    	cfg.xstart = ST7735_XSTART;
+    	cfg.ystart = ST7735_YSTART;
+    }
+     break;
+    case 1:
+    {
+    	uint8_t d_r = (cfg.data_rotation[1] | cfg.data_rotation[2] | cfg.data_rotation[3]);
+    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	cfg.width  = ST7735_HEIGHT;
+    	cfg.height = ST7735_WIDTH;
+    	cfg.xstart = ST7735_YSTART;
+    }
+      break;
+    case 2:
+    {
+    	uint8_t d_r = cfg.data_rotation[3];
+    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	cfg.width  = ST7735_WIDTH;
+    	cfg.height = ST7735_HEIGHT;
+    	cfg.xstart = ST7735_XSTART;
+    	cfg.ystart = ST7735_YSTART;
+    }
+      break;
+    case 3:
+    {
+    	uint8_t d_r = (cfg.data_rotation[0] | cfg.data_rotation[2] | cfg.data_rotation[3]);
+    	ST7735_WriteData(&d_r, sizeof(d_r));
+    	cfg.width  = ST7735_HEIGHT;
+    	cfg.height = ST7735_WIDTH;
+    	cfg.xstart = ST7735_YSTART;
+    	cfg.ystart = ST7735_XSTART;
+    }
+      break;
+  }
+  GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
+}
+
+#ifdef TESTING
+
+
 
 void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor)
 {
-	TFT_CS_L();
+	GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
 
     while(*str)
     {
-        if(x + font.width >= _width)
+        if(x + font.width >= cfg.width)
         {
             x = 0;
             y += font.height;
-            if(y + font.height >= _height)
+            if(y + font.height >= cfg.height)
             {
                 break;
             }
@@ -297,79 +523,21 @@ void ST7735_DrawString(uint16_t x, uint16_t y, const char* str, FontDef font, ui
         x += font.width;
         str++;
     }
-    TFT_CS_H();
-}
-
-void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
-{
-    // clipping
-    if ((x >= _width) || (y >= _height))
-        return;
-    if ((x + w - 1) >= _width)
-        w = _width - x;
-    if ((y + h - 1) >= _height)
-        h = _height - y;
-
-    TFT_CS_L();
-    ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1);
-
-    uint8_t data[2] = { color >> 8, color & 0xFF };
-    TFT_DC_D();
-
-#ifdef USE_SPI_DMA
-    uint8_t tbuf[w*2];
-    for (y = h; y > 0; y--) {
-        for (int x = w * 2; x >= 0; x -= 2) {
-            tbuf[x] = data[0];
-            tbuf[x + 1] = data[1];
-        }
-        HAL_SPI_Transmit_DMA(&ST7735_SPI_PORT, tbuf, sizeof(tbuf));
-        while (hspi1.State == HAL_SPI_STATE_BUSY_TX) {
-        };
-    }
-#else
-    for (y = h; y > 0; y--) {
-        for (x = w; x > 0; x--) {
-            HAL_SPI_Transmit(&ST7735_SPI_PORT, data, sizeof(data), HAL_MAX_DELAY);
-        }
-    }
-#endif
-
-    TFT_CS_H();
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
 }
 
 void ST7735_FillScreen(uint16_t color)
 {
-    ST7735_FillRectangle(0, 0, _width, _height, color);
+    ST7735_FillRectangle(0, 0, cfg.width, cfg.height, color);
 }
 
-void ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
-{
-    if((x >= _width) || (y >= _height)) return;
-    if((x + w - 1) >= _width) return;
-    if((y + h - 1) >= _height) return;
 
-    TFT_CS_L();
-    ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
-    ST7735_WriteData((uint8_t*)data, sizeof(uint16_t)*w*h);
-    TFT_CS_H();
-}
 
 void ST7735_InvertColors(bool invert)
 {
-	TFT_CS_L();
+	GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
     ST7735_WriteCommand(invert ? ST7735_INVON : ST7735_INVOFF);
-    TFT_CS_H();
-}
-
-void ST7735_Backlight_On(void)
-{
-	TFT_BL_H();
-}
-
-void ST7735_Backlight_Off(void)
-{
-	TFT_BL_L();
+    GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, true);
 }
 
 /***************************************************************************************
@@ -464,7 +632,7 @@ void ST7735_DrawCircleHelper( int16_t x0, int16_t y0, int16_t r, uint8_t cornern
 ***************************************************************************************/
 void ST7735_FillCircle(int16_t x0, int16_t y0, int16_t r, uint16_t color)
 {
-	ST7735_DrawFastVLine(x0, y0 - r, r + r + 1, color);
+	ST7735_DrawFastVLine   (x0, y0 - r, r + r + 1, color);
 	ST7735_FillCircleHelper(x0, y0, r, 3, 0, color);
 }
 
@@ -664,17 +832,17 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
   // Sort coordinates by Y order (y2 >= y1 >= y0)
   if (y0 > y1)
   {
-	  SWAP_INT16_T(y0, y1); SWAP_INT16_T(x0, x1);
+	  swap_int16_t(&y0, &y1); swap_int16_t(&x0, &x1);
   }
 
   if (y1 > y2)
   {
-	  SWAP_INT16_T(y2, y1); SWAP_INT16_T(x2, x1);
+	  swap_int16_t(&y2, &y1); swap_int16_t(&x2, &x1);
   }
 
   if (y0 > y1)
   {
-	  SWAP_INT16_T(y0, y1); SWAP_INT16_T(x0, x1);
+	  swap_int16_t(&y0, &y1); swap_int16_t(&x0, &x1);
   }
 
   if (y0 == y2)
@@ -714,7 +882,7 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
     sa += dx01;
     sb += dx02;
 
-    if (a > b) SWAP_INT16_T(a, b);
+    if (a > b) swap_int16_t(&a, &b);
     ST7735_DrawFastHLine(a, y, b - a + 1, color);
   }
 
@@ -729,171 +897,54 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
     sa += dx12;
     sb += dx02;
 
-    if (a > b) SWAP_INT16_T(a, b);
+    if (a > b) swap_int16_t(&a, &b);
     ST7735_DrawFastHLine(a, y, b - a + 1, color);
   }
 }
 
-/***************************************************************************************
-** Function name:           drawLine
-** Description:             draw a line between 2 arbitrary points
-***************************************************************************************/
-
-// Slower but more compact line drawing function
-void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)
-{
-	int16_t steep = abs(y1 - y0) > abs(x1 - x0);
-	if (steep)
-	{
-		SWAP_INT16_T(x0, y0);
-		SWAP_INT16_T(x1, y1);
-	}
-
-	if (x0 > x1)
-	{
-		SWAP_INT16_T(x0, x1);
-		SWAP_INT16_T(y0, y1);
-	}
-
-	int16_t dx, dy;
-	dx = x1 - x0;
-	dy = abs(y1 - y0);
-
-	int16_t err = dx / 2;
-	int16_t ystep;
-
-	if (y0 < y1)
-	{
-		ystep = 1;
-	}
-	else
-	{
-		ystep = -1;
-	}
-
-	for (; x0<=x1; x0++)
-	{
-		if (steep)
-		{
-			ST7735_DrawPixel(y0, x0, color);
-		}
-		else
-		{
-			ST7735_DrawPixel(x0, y0, color);
-		}
-		err -= dy;
-		if (err < 0)
-		{
-			y0 += ystep;
-			err += dx;
-		}
-	}
-}
-
-/***************************************************************************************
-** Function name:           drawFastVLine
-** Description:             draw a vertical line
-***************************************************************************************/
-void ST7735_DrawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color)
-{
-  // Rudimentary clipping
-  if ((x >= _width) || (y >= _height)) return;
-  if ((y + h - 1) >= _height) h = _height - y;
-
-  #ifdef USE_SPI_DMA
-  ST7735_FillRectangle(x, y, 1, h, color);
-  #else
-  ST7735_DrawLine(x, y, x, y + h - 1, color);
-  #endif
-
-}
-
-/***************************************************************************************
-** Function name:           drawFastHLine
-** Description:             draw a horizontal line
-***************************************************************************************/
-void ST7735_DrawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color)
-{
-  // Rudimentary clipping
-  if ((x >= _width) || (y >= _height)) return;
-  if ((x + w - 1) >= _width)  w = _width - x;
-
-  #ifdef USE_SPI_DMA
-  ST7735_FillRectangle(x, y, w, 1, color);
-  #else
-  ST7735_DrawLine(x, y, x + w - 1, y, color);
-  #endif
-}
-
-/***************************************************************************************
-** Function name:           setRotation
-** Description:             rotate the screen orientation m = 0-3
-***************************************************************************************/
-void ST7735_SetRotation(uint8_t m)
-{
-  _value_rotation = m % 4;
-
-  TFT_CS_L();
-
-  ST7735_WriteCommand(ST7735_MADCTL);
-
-  switch (_value_rotation)
-  {
-    case 0:
-    {
-    	uint8_t d_r = (_data_rotation[0] | _data_rotation[1] | _data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
-        _width  = ST7735_WIDTH;
-        _height = ST7735_HEIGHT;
-        _xstart = ST7735_XSTART;
-		_ystart = ST7735_YSTART;
-    }
-     break;
-    case 1:
-    {
-    	uint8_t d_r = (_data_rotation[1] | _data_rotation[2] | _data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
-    	_width  = ST7735_HEIGHT;
-    	_height = ST7735_WIDTH;
-    	_xstart = ST7735_YSTART;
-    	_ystart = ST7735_XSTART;
-    }
-      break;
-    case 2:
-    {
-    	uint8_t d_r = _data_rotation[3];
-    	ST7735_WriteData(&d_r, sizeof(d_r));
-    	_width  = ST7735_WIDTH;
-    	_height = ST7735_HEIGHT;
-    	_xstart = ST7735_XSTART;
-    	_ystart = ST7735_YSTART;
-    }
-      break;
-    case 3:
-    {
-    	uint8_t d_r = (_data_rotation[0] | _data_rotation[2] | _data_rotation[3]);
-    	ST7735_WriteData(&d_r, sizeof(d_r));
-    	_width  = ST7735_HEIGHT;
-    	_height = ST7735_WIDTH;
-    	_xstart = ST7735_YSTART;
-    	_ystart = ST7735_XSTART;
-    }
-      break;
-  }
-  TFT_CS_H();
-}
-
 uint8_t ST7735_GetRotation(void)
 {
-  return _value_rotation;
+  return cfg.value_rotation;
 }
 
 int16_t ST7735_GetHeight(void)
 {
-	return _height;
+	return cfg.height;
 }
 
 int16_t ST7735_GetWidth(void)
 {
-	return _width;
+	return cfg.width;
 }
+
+static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor)
+{
+    uint32_t i, b, j;
+
+    ST7735_SetAddressWindow(x, y, x+font.width-1, y+font.height-1);
+
+    for(i = 0; i < font.height; i++)
+    {
+        b = font.data[(ch - 32) * font.height + i];
+        for(j = 0; j < font.width; j++)
+        {
+            if((b << j) & 0x8000)
+            {
+                uint8_t data[] = { color >> 8, color & 0xFF };
+                ST7735_WriteData(data, sizeof(data));
+            }
+            else
+            {
+                uint8_t data[] = { bgcolor >> 8, bgcolor & 0xFF };
+                ST7735_WriteData(data, sizeof(data));
+            }
+        }
+    }
+}
+
+inline uint16_t ST7735_Color565(uint8_t r, uint8_t g, uint8_t b)
+{
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3);
+}
+
+#endif
