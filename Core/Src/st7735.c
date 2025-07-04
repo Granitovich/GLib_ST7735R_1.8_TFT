@@ -19,6 +19,90 @@
 #include "st7735.h"
 #include "stdlib.h"
 
+typedef enum
+{
+    ST7735_MADCTL_MY    = 0x80,
+    ST7735_MADCTL_MX    = 0x40,
+    ST7735_MADCTL_MV    = 0x20,
+    ST7735_MADCTL_RGB   = 0x00,
+    ST7735_MADCTL_BGR   = 0x08,
+
+    ST7735_WIDTH        = 128,
+    ST7735_HEIGHT       = 160,
+    ST7735_XSTART       = 0,
+    ST7735_YSTART       = 0,
+    ST7735_DATA_ROTATION = (ST7735_MADCTL_MX | ST7735_MADCTL_MY),
+
+    ST7735_NOP          = 0x00,
+    ST7735_SWRESET      = 0x01,
+    ST7735_RDDID        = 0x04,
+    ST7735_RDDST        = 0x09,
+
+    ST7735_SLPIN        = 0x10,
+    ST7735_SLPOUT       = 0x11,
+    ST7735_PTLON        = 0x12,
+    ST7735_NORON        = 0x13,
+
+    ST7735_INVOFF       = 0x20,
+    ST7735_INVON        = 0x21,
+    ST7735_DISPOFF      = 0x28,
+    ST7735_DISPON       = 0x29,
+    ST7735_CASET        = 0x2A,
+    ST7735_RASET        = 0x2B,
+    ST7735_RAMWR        = 0x2C,
+    ST7735_RAMRD        = 0x2E,
+
+    ST7735_PTLAR        = 0x30,
+    ST7735_COLMOD       = 0x3A,
+    ST7735_MADCTL       = 0x36,
+
+    ST7735_FRMCTR1      = 0xB1,
+    ST7735_FRMCTR2      = 0xB2,
+    ST7735_FRMCTR3      = 0xB3,
+    ST7735_INVCTR       = 0xB4,
+    ST7735_DISSET5      = 0xB6,
+
+    ST7735_PWCTR1       = 0xC0,
+    ST7735_PWCTR2       = 0xC1,
+    ST7735_PWCTR3       = 0xC2,
+    ST7735_PWCTR4       = 0xC3,
+    ST7735_PWCTR5       = 0xC4,
+    ST7735_VMCTR1       = 0xC5,
+
+    ST7735_RDID1        = 0xDA,
+    ST7735_RDID2        = 0xDB,
+    ST7735_RDID3        = 0xDC,
+    ST7735_RDID4        = 0xDD,
+
+    ST7735_PWCTR6       = 0xFC,
+
+    ST7735_GMCTRP1      = 0xE0,
+    ST7735_GMCTRN1      = 0xE1,
+
+    ST7735_BLACK        = 0x0000,
+    ST7735_BLUE         = 0x001F,
+    ST7735_RED          = 0xF800,
+    ST7735_GREEN        = 0x07E0,
+    ST7735_CYAN         = 0x07FF,
+    ST7735_MAGENTA      = 0xF81F,
+    ST7735_YELLOW       = 0xFFE0,
+    ST7735_WHITE        = 0xFFFF,
+
+	ST7735_DELAY        = 0x80,
+
+} driver_st7735_constants;
+
+typedef enum
+{
+	DRIVER_ST7735_STATUS_OK = 1,
+	DRIVER_ST7735_STATUS_INVALID_PARAMETERS,
+	DRIVER_ST7735_STATUS_NOT_INITIALIZED,
+	DRIVER_ST7735_STATUS_WRITE_ERROR,
+	DRIVER_ST7735_STATUS_TIMEOUT,
+} driver_st7735_status;
+
+
+
 #define TFT_BL_H() (ST7735_BL_GPIO_Port->BSRR = ST7735_BL_Pin)
 #define TFT_BL_L() (ST7735_BL_GPIO_Port->BSRR = ((uint32_t)ST7735_BL_Pin << 16))
 
@@ -31,9 +115,19 @@
 #define TFT_RES_H() (ST7735_RES_GPIO_Port->BSRR = ST7735_RES_Pin)
 #define TFT_RES_L() (ST7735_RES_GPIO_Port->BSRR = ((uint32_t)ST7735_RES_Pin << 16))
 
-#define ST7735_COLOR565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
-#define SWAP_INT16_T(a, b) { int16_t t = a; a = b; b = t; }
-#define DELAY 0x80
+__attribute__((always_inline)) static inline void GPIO_SetPin(GPIO_TypeDef* port, uint16_t pin, bool level)
+{
+    if (level)
+    {
+        port->BSRR = pin;
+    }
+    else
+    {
+        port->BSRR = (uint32_t)pin << 16;
+    }
+}
+
+
 
 static uint8_t _data_rotation[4] = { ST7735_MADCTL_MX, ST7735_MADCTL_MY, ST7735_MADCTL_MV, ST7735_MADCTL_RGB };
 
@@ -46,9 +140,9 @@ static uint8_t _xstart = ST7735_XSTART, _ystart = ST7735_YSTART;
 static const uint8_t
 init_cmds1[] = {            		// Init for 7735R, part 1 (red or green tab)
 		  15,                       // 15 commands in list:
-		  ST7735_SWRESET, DELAY,  	//  1: Software reset, 0 args, w/delay
+		  ST7735_SWRESET, ST7735_DELAY,  	//  1: Software reset, 0 args, w/delay
 		  150,                    	//     150 ms delay
-		  ST7735_SLPOUT, DELAY,  	//  2: Out of sleep mode, 0 args, w/delay
+		  ST7735_SLPOUT, ST7735_DELAY,  	//  2: Out of sleep mode, 0 args, w/delay
 		  255,                    	//     500 ms delay
 		  ST7735_FRMCTR1, 3,		//  3: Frame rate ctrl - normal mode, 3 args:
 		  0x01, 0x2C, 0x2D,       	//     Rate = fosc/(1x2+40) * (LINE+2C+2D)
@@ -102,9 +196,9 @@ init_cmds3[] = {            		// Init for 7735R, part 3 (red or green tab)
 		0x2E, 0x2C, 0x29, 0x2D,
 		0x2E, 0x2E, 0x37, 0x3F,
 		0x00, 0x00, 0x02, 0x10,
-		ST7735_NORON, DELAY, 		//  3: Normal display on, no args, w/delay
+		ST7735_NORON, ST7735_DELAY, 		//  3: Normal display on, no args, w/delay
 		10,                     	//     10 ms delay
-		ST7735_DISPON, DELAY, 		//  4: Main screen turn on, no args w/delay
+		ST7735_DISPON, ST7735_DELAY, 		//  4: Main screen turn on, no args w/delay
 		100 };                  	//     100 ms delay
 
 static void ST7735_WriteCommand       (uint8_t cmd);
@@ -112,8 +206,19 @@ static void ST7735_WriteData          (uint8_t* buff, size_t buff_size);
 static void ST7735_ExecuteCommandList (const uint8_t *addr);
 static void ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
 
+static inline void swap_int16_t(int16_t* a, int16_t* b)
+{
+    int16_t t = *a;
+    *a = *b;
+    *b = t;
+}
+
+
+
 #ifdef TESTING
+
 static void ST7735_WriteChar          (uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor);
+
 #endif
 
 static void ST7735_Reset()
@@ -150,8 +255,8 @@ static void ST7735_ExecuteCommandList(const uint8_t *addr)
 
         numArgs = *addr++;
         // If high bit set, delay follows args
-        ms = numArgs & DELAY;
-        numArgs &= ~DELAY;
+        ms = numArgs & ST7735_DELAY;
+        numArgs &= ~ST7735_DELAY;
         if(numArgs)
         {
             ST7735_WriteData((uint8_t*)addr, numArgs);
@@ -251,9 +356,10 @@ void ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16
 
 void ST7735_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data)
 {
-    if((x >= _width) || (y >= _height)) return;
-    if((x + w - 1) >= _width) return;
-    if((y + h - 1) >= _height) return;
+    if( ((x >= _width) || (y >= _height)) || ( (x + w - 1) >= _width ) || ( (y + h - 1) >= _height ) )
+    {
+    	return;
+    }
 
     TFT_CS_L();
     ST7735_SetAddressWindow(x, y, x+w-1, y+h-1);
@@ -266,14 +372,14 @@ void ST7735_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t co
 	int16_t steep = abs(y1 - y0) > abs(x1 - x0);
 	if (steep)
 	{
-		SWAP_INT16_T(x0, y0);
-		SWAP_INT16_T(x1, y1);
+		swap_int16_t(&x0, &y0);
+		swap_int16_t(&x1, &y1);
 	}
 
 	if (x0 > x1)
 	{
-		SWAP_INT16_T(x0, x1);
-		SWAP_INT16_T(y0, y1);
+		swap_int16_t(&x0, &x1);
+		swap_int16_t(&y0, &y1);
 	}
 
 	int16_t dx, dy;
@@ -723,17 +829,17 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
   // Sort coordinates by Y order (y2 >= y1 >= y0)
   if (y0 > y1)
   {
-	  SWAP_INT16_T(y0, y1); SWAP_INT16_T(x0, x1);
+	  swap_int16_t(&y0, &y1); swap_int16_t(&x0, &x1);
   }
 
   if (y1 > y2)
   {
-	  SWAP_INT16_T(y2, y1); SWAP_INT16_T(x2, x1);
+	  swap_int16_t(&y2, &y1); swap_int16_t(&x2, &x1);
   }
 
   if (y0 > y1)
   {
-	  SWAP_INT16_T(y0, y1); SWAP_INT16_T(x0, x1);
+	  swap_int16_t(&y0, &y1); swap_int16_t(&x0, &x1);
   }
 
   if (y0 == y2)
@@ -773,7 +879,7 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
     sa += dx01;
     sb += dx02;
 
-    if (a > b) SWAP_INT16_T(a, b);
+    if (a > b) swap_int16_t(&a, &b);
     ST7735_DrawFastHLine(a, y, b - a + 1, color);
   }
 
@@ -788,7 +894,7 @@ void ST7735_FillTriangle( int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_
     sa += dx12;
     sb += dx02;
 
-    if (a > b) SWAP_INT16_T(a, b);
+    if (a > b) swap_int16_t(&a, &b);
     ST7735_DrawFastHLine(a, y, b - a + 1, color);
   }
 }
@@ -833,5 +939,9 @@ static void ST7735_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint
     }
 }
 
+inline uint16_t ST7735_Color565(uint8_t r, uint8_t g, uint8_t b)
+{
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3);
+}
 
 #endif
