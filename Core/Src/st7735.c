@@ -179,10 +179,10 @@ init_cmds3[] = {            		// Init for 7735R, part 3 (red or green tab)
 		ST7735_DISPON, ST7735_DELAY, 		//  4: Main screen turn on, no args w/delay
 		100 };                  	//     100 ms delay
 
-static driver_st7735_status ST7735_WriteCommand       (uint8_t cmd);
-static driver_st7735_status ST7735_WriteData          (uint8_t* buff, size_t buff_size);
+static driver_st7735_status ST7735_WriteCommand       (const uint8_t cmd);
+static driver_st7735_status ST7735_WriteData          (const uint8_t* const buff, const size_t buff_size);
 static driver_st7735_status ST7735_ExecuteCommandList (const uint8_t *addr);
-static driver_st7735_status ST7735_SetAddressWindow   (uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
+static driver_st7735_status ST7735_SetAddressWindow   (const uint8_t x0, const uint8_t y0, const uint8_t x1, const uint8_t y1);
 static void ST7735_Reset();
 static inline void swap_int16_t(int16_t* a, int16_t* b)
 {
@@ -193,9 +193,7 @@ static inline void swap_int16_t(int16_t* a, int16_t* b)
 __attribute__((always_inline)) static inline void GPIO_SetPin(GPIO_TypeDef* port, uint16_t pin, bool level)
 {
     if (level) { port->BSRR = pin; }
-    else       {port->BSRR = (uint32_t)pin << 16; }
-
-
+    else       { port->BSRR = (uint32_t)pin << 16; }
 }
 
 void ST7735_Backlight_On(void)
@@ -216,9 +214,9 @@ driver_st7735_status ST7735_Init(SPI_HandleTypeDef *hspi)
 	GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
     ST7735_Reset();
 
-    if( DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds1)  ||
-    	DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds2)  ||
-		DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds3))
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds1)  ||
+    	 DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds2)  ||
+		 DRIVER_ST7735_STATUS_OK != ST7735_ExecuteCommandList (init_cmds3))
     {
     	return DRIVER_ST7735_STATUS_SEND_ERROR;
     }
@@ -241,7 +239,7 @@ driver_st7735_status ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
     {
     	return DRIVER_ST7735_STATUS_SEND_ERROR;
     }
-    uint8_t data[] = { color >> 8, color & 0xFF };
+    const uint8_t data[] = { color >> 8, color & 0xFF };
 
     if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
     {
@@ -255,7 +253,6 @@ driver_st7735_status ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 
 driver_st7735_status ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
-    // clipping
     if ( (x >= cfg.width) || (y >= cfg.height) )
     {
     	return DRIVER_ST7735_STATUS_INVALID_PARAMETERS;
@@ -271,6 +268,7 @@ driver_st7735_status ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, ui
     }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
+
     if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1) )
     {
     	return DRIVER_ST7735_STATUS_OK;
@@ -496,7 +494,7 @@ static void ST7735_Reset()
 	GPIO_SetPin(ST7735_RES_GPIO_Port, ST7735_RES_Pin, true);
 }
 
-static driver_st7735_status ST7735_WriteCommand(uint8_t cmd)
+static driver_st7735_status ST7735_WriteCommand(const uint8_t cmd)
 {
 	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, false);
 
@@ -512,7 +510,7 @@ static driver_st7735_status ST7735_WriteCommand(uint8_t cmd)
 
 }
 
-static driver_st7735_status ST7735_WriteData(uint8_t* buff, size_t buff_size)
+static driver_st7735_status ST7735_WriteData(const uint8_t* const buff, const size_t buff_size)
 {
 	GPIO_SetPin(ST7735_DC_GPIO_Port, ST7735_DC_Pin, true);
 
@@ -564,7 +562,7 @@ static driver_st7735_status ST7735_ExecuteCommandList(const uint8_t *addr)
     return DRIVER_ST7735_STATUS_OK;
 }
 
-static driver_st7735_status ST7735_SetAddressWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
+static driver_st7735_status ST7735_SetAddressWindow(const uint8_t x0, const uint8_t y0, const uint8_t x1, const uint8_t y1)
 {
     /* column address set */
 	if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_CASET))
