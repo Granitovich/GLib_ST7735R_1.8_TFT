@@ -363,11 +363,13 @@ void draw_1_file(const uint16_t number_of_frames, char* file_name)
 {
 	FIL file;
 	UINT br;
+	FRESULT  res;
 	static uint16_t counter = 0;
 
 	if (counter == 0 )
 	{
-		if( FR_OK != f_open(&file, file_name, FA_READ))
+		res = f_open(&file, file_name, FA_READ);
+		if( FR_OK != res)
 		{
 			draw_image(error_image);
 		}

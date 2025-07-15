@@ -234,14 +234,10 @@ driver_st7735_status ST7735_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
     }
 
     GPIO_SetPin(ST7735_CS_GPIO_Port, ST7735_CS_Pin, false);
-
-    if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x+1, y+1))
-    {
-    	return DRIVER_ST7735_STATUS_SEND_ERROR;
-    }
     const uint8_t data[] = { color >> 8, color & 0xFF };
 
-    if( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
+    if( (DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x+1, y+1)) ||
+        (DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data))) )
     {
     	return DRIVER_ST7735_STATUS_SEND_ERROR;
     }
@@ -271,7 +267,7 @@ driver_st7735_status ST7735_FillRectangle(uint16_t x, uint16_t y, uint16_t w, ui
 
     if( DRIVER_ST7735_STATUS_OK != ST7735_SetAddressWindow(x, y, x + w - 1, y + h - 1) )
     {
-    	return DRIVER_ST7735_STATUS_OK;
+    	return DRIVER_ST7735_STATUS_SEND_ERROR;
     }
 
     const uint8_t data[2] = { color >> 8, color & 0xFF };
@@ -518,11 +514,10 @@ static driver_st7735_status ST7735_WriteData(const uint8_t* const buff, const si
 	{
 		return DRIVER_ST7735_STATUS_SEND_ERROR;
 	}
-	else
-	{
-		while(cfg.hspi->State == HAL_SPI_STATE_BUSY_TX);
-		return DRIVER_ST7735_STATUS_OK;
-	}
+	while(cfg.hspi->State == HAL_SPI_STATE_BUSY_TX);
+
+	return DRIVER_ST7735_STATUS_OK;
+
 }
 
 static driver_st7735_status ST7735_ExecuteCommandList(const uint8_t *addr)
@@ -555,7 +550,10 @@ static driver_st7735_status ST7735_ExecuteCommandList(const uint8_t *addr)
         if(ms)
         {
             ms = *addr++;
-            if(ms == 255) ms = 500;
+            if(ms == 255)
+            {
+            	ms = 500;
+            }
             HAL_Delay(ms);
         }
     }
@@ -564,34 +562,25 @@ static driver_st7735_status ST7735_ExecuteCommandList(const uint8_t *addr)
 
 static driver_st7735_status ST7735_SetAddressWindow(const uint8_t x0, const uint8_t y0, const uint8_t x1, const uint8_t y1)
 {
-    /* column address set */
-	if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_CASET))
+	uint8_t data[] = { 0x00, x0 + cfg.xstart, 0x00, x1 + cfg.xstart };
+
+    /* column and row address set */
+	if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_CASET)    ||
+		 DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) ||
+		 DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RASET) )
 	{
 		return DRIVER_ST7735_STATUS_SEND_ERROR;
 	}
-    uint8_t data[] = { 0x00, x0 + cfg.xstart, 0x00, x1 + cfg.xstart };
 
-    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
-    {
-    	return DRIVER_ST7735_STATUS_SEND_ERROR;
-    }
-    /* row address set */
-    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RASET))
-    {
-    	return DRIVER_ST7735_STATUS_SEND_ERROR;
-    }
     data[1] = y0 + cfg.ystart;
     data[3] = y1 + cfg.ystart;
 
-    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) )
+    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteData(data, sizeof(data)) ||
+    	 DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RAMWR)	)
     {
     	return DRIVER_ST7735_STATUS_SEND_ERROR;
     }
-    /* write to RAM */
-    if ( DRIVER_ST7735_STATUS_OK != ST7735_WriteCommand(ST7735_RAMWR))
-    {
-    	return DRIVER_ST7735_STATUS_SEND_ERROR;
-    }
+
 
     return DRIVER_ST7735_STATUS_OK;
 }
